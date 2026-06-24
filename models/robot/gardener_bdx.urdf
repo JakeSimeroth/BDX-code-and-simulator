@@ -1,0 +1,149 @@
+<?xml version="1.0"?>
+<!-- GardenerBDX URDF — standard import path for Isaac Lab / Isaac Sim.
+     Joints match configs/robot/gardener_bdx.yaml in name AND order:
+       left_hip_yaw, left_hip_roll, left_hip_pitch, left_knee, left_ankle_pitch,
+       right_hip_yaw, right_hip_roll, right_hip_pitch, right_knee, right_ankle_pitch,
+       neck_yaw, head_pitch.
+     Hip yaw+roll are split into two 1-DOF joints (URDF joints are single-axis)
+     with light intermediate links. Inertials are reasonable placeholders —
+     TUNE to your real robot's CAD/measurements before serious Sim2Real. -->
+<robot name="gardener_bdx">
+  <material name="blue"><color rgba="0.2 0.5 0.9 1"/></material>
+  <material name="grey"><color rgba="0.6 0.6 0.6 1"/></material>
+  <material name="dark"><color rgba="0.2 0.2 0.2 1"/></material>
+  <material name="white"><color rgba="0.95 0.95 0.95 1"/></material>
+
+  <!-- ===================== TORSO (base) ===================== -->
+  <link name="base_link">
+    <inertial>
+      <mass value="2.6"/>
+      <origin xyz="0 0 0.01"/>
+      <inertia ixx="0.0064" iyy="0.0074" izz="0.0053" ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+    <visual><geometry><box size="0.12 0.10 0.14"/></geometry><material name="blue"/></visual>
+    <collision><geometry><box size="0.12 0.10 0.14"/></geometry></collision>
+    <!-- carried water payload (visual only; mass folded into base inertia) -->
+    <visual><origin xyz="0 0 0.02"/><geometry><cylinder radius="0.035" length="0.10"/></geometry></visual>
+  </link>
+
+  <!-- ===================== LEFT LEG ===================== -->
+  <link name="left_hip_yaw_link">
+    <inertial><mass value="0.08"/><inertia ixx="2e-5" iyy="2e-5" izz="2e-5" ixy="0" ixz="0" iyz="0"/></inertial>
+    <visual><geometry><sphere radius="0.025"/></geometry><material name="dark"/></visual>
+  </link>
+  <joint name="left_hip_yaw" type="revolute">
+    <parent link="base_link"/><child link="left_hip_yaw_link"/>
+    <origin xyz="0 0.05 -0.06"/><axis xyz="0 0 1"/>
+    <limit lower="-0.6" upper="0.6" effort="6" velocity="20"/>
+  </joint>
+  <link name="left_hip_roll_link">
+    <inertial><mass value="0.08"/><inertia ixx="2e-5" iyy="2e-5" izz="2e-5" ixy="0" ixz="0" iyz="0"/></inertial>
+  </link>
+  <joint name="left_hip_roll" type="revolute">
+    <parent link="left_hip_yaw_link"/><child link="left_hip_roll_link"/>
+    <origin xyz="0 0 0"/><axis xyz="1 0 0"/>
+    <limit lower="-0.4" upper="0.4" effort="6" velocity="20"/>
+  </joint>
+  <link name="left_thigh_link">
+    <inertial><origin xyz="0 0 -0.06"/><mass value="0.2"/><inertia ixx="2.4e-4" iyy="2.4e-4" izz="3e-5" ixy="0" ixz="0" iyz="0"/></inertial>
+    <visual><origin xyz="0 0 -0.06"/><geometry><cylinder radius="0.018" length="0.12"/></geometry><material name="grey"/></visual>
+    <collision><origin xyz="0 0 -0.06"/><geometry><cylinder radius="0.018" length="0.12"/></geometry></collision>
+  </link>
+  <joint name="left_hip_pitch" type="revolute">
+    <parent link="left_hip_roll_link"/><child link="left_thigh_link"/>
+    <origin xyz="0 0 0"/><axis xyz="0 1 0"/>
+    <limit lower="-1.6" upper="0.8" effort="6" velocity="20"/>
+  </joint>
+  <link name="left_shank_link">
+    <inertial><origin xyz="0 0 -0.06"/><mass value="0.15"/><inertia ixx="1.8e-4" iyy="1.8e-4" izz="2e-5" ixy="0" ixz="0" iyz="0"/></inertial>
+    <visual><origin xyz="0 0 -0.06"/><geometry><cylinder radius="0.015" length="0.12"/></geometry><material name="grey"/></visual>
+    <collision><origin xyz="0 0 -0.06"/><geometry><cylinder radius="0.015" length="0.12"/></geometry></collision>
+  </link>
+  <joint name="left_knee" type="revolute">
+    <parent link="left_thigh_link"/><child link="left_shank_link"/>
+    <origin xyz="0 0 -0.12"/><axis xyz="0 1 0"/>
+    <limit lower="0" upper="1.8" effort="6" velocity="20"/>
+  </joint>
+  <link name="left_foot_link">
+    <inertial><origin xyz="0.02 0 -0.012"/><mass value="0.1"/><inertia ixx="3e-5" iyy="9e-5" izz="1e-4" ixy="0" ixz="0" iyz="0"/></inertial>
+    <visual><origin xyz="0.02 0 -0.012"/><geometry><box size="0.10 0.05 0.024"/></geometry><material name="dark"/></visual>
+    <collision><origin xyz="0.02 0 -0.012"/><geometry><box size="0.10 0.05 0.024"/></geometry></collision>
+  </link>
+  <joint name="left_ankle_pitch" type="revolute">
+    <parent link="left_shank_link"/><child link="left_foot_link"/>
+    <origin xyz="0 0 -0.12"/><axis xyz="0 1 0"/>
+    <limit lower="-1.0" upper="0.6" effort="6" velocity="20"/>
+  </joint>
+
+  <!-- ===================== RIGHT LEG ===================== -->
+  <link name="right_hip_yaw_link">
+    <inertial><mass value="0.08"/><inertia ixx="2e-5" iyy="2e-5" izz="2e-5" ixy="0" ixz="0" iyz="0"/></inertial>
+    <visual><geometry><sphere radius="0.025"/></geometry><material name="dark"/></visual>
+  </link>
+  <joint name="right_hip_yaw" type="revolute">
+    <parent link="base_link"/><child link="right_hip_yaw_link"/>
+    <origin xyz="0 -0.05 -0.06"/><axis xyz="0 0 1"/>
+    <limit lower="-0.6" upper="0.6" effort="6" velocity="20"/>
+  </joint>
+  <link name="right_hip_roll_link">
+    <inertial><mass value="0.08"/><inertia ixx="2e-5" iyy="2e-5" izz="2e-5" ixy="0" ixz="0" iyz="0"/></inertial>
+  </link>
+  <joint name="right_hip_roll" type="revolute">
+    <parent link="right_hip_yaw_link"/><child link="right_hip_roll_link"/>
+    <origin xyz="0 0 0"/><axis xyz="1 0 0"/>
+    <limit lower="-0.4" upper="0.4" effort="6" velocity="20"/>
+  </joint>
+  <link name="right_thigh_link">
+    <inertial><origin xyz="0 0 -0.06"/><mass value="0.2"/><inertia ixx="2.4e-4" iyy="2.4e-4" izz="3e-5" ixy="0" ixz="0" iyz="0"/></inertial>
+    <visual><origin xyz="0 0 -0.06"/><geometry><cylinder radius="0.018" length="0.12"/></geometry><material name="grey"/></visual>
+    <collision><origin xyz="0 0 -0.06"/><geometry><cylinder radius="0.018" length="0.12"/></geometry></collision>
+  </link>
+  <joint name="right_hip_pitch" type="revolute">
+    <parent link="right_hip_roll_link"/><child link="right_thigh_link"/>
+    <origin xyz="0 0 0"/><axis xyz="0 1 0"/>
+    <limit lower="-1.6" upper="0.8" effort="6" velocity="20"/>
+  </joint>
+  <link name="right_shank_link">
+    <inertial><origin xyz="0 0 -0.06"/><mass value="0.15"/><inertia ixx="1.8e-4" iyy="1.8e-4" izz="2e-5" ixy="0" ixz="0" iyz="0"/></inertial>
+    <visual><origin xyz="0 0 -0.06"/><geometry><cylinder radius="0.015" length="0.12"/></geometry><material name="grey"/></visual>
+    <collision><origin xyz="0 0 -0.06"/><geometry><cylinder radius="0.015" length="0.12"/></geometry></collision>
+  </link>
+  <joint name="right_knee" type="revolute">
+    <parent link="right_thigh_link"/><child link="right_shank_link"/>
+    <origin xyz="0 0 -0.12"/><axis xyz="0 1 0"/>
+    <limit lower="0" upper="1.8" effort="6" velocity="20"/>
+  </joint>
+  <link name="right_foot_link">
+    <inertial><origin xyz="0.02 0 -0.012"/><mass value="0.1"/><inertia ixx="3e-5" iyy="9e-5" izz="1e-4" ixy="0" ixz="0" iyz="0"/></inertial>
+    <visual><origin xyz="0.02 0 -0.012"/><geometry><box size="0.10 0.05 0.024"/></geometry><material name="dark"/></visual>
+    <collision><origin xyz="0.02 0 -0.012"/><geometry><box size="0.10 0.05 0.024"/></geometry></collision>
+  </link>
+  <joint name="right_ankle_pitch" type="revolute">
+    <parent link="right_shank_link"/><child link="right_foot_link"/>
+    <origin xyz="0 0 -0.12"/><axis xyz="0 1 0"/>
+    <limit lower="-1.0" upper="0.6" effort="6" velocity="20"/>
+  </joint>
+
+  <!-- ===================== NECK + HEAD (camera/LiDAR mount) ===================== -->
+  <link name="neck_link">
+    <inertial><mass value="0.05"/><inertia ixx="2e-5" iyy="2e-5" izz="2e-5" ixy="0" ixz="0" iyz="0"/></inertial>
+    <visual><geometry><cylinder radius="0.012" length="0.03"/></geometry><material name="dark"/></visual>
+  </link>
+  <joint name="neck_yaw" type="revolute">
+    <parent link="base_link"/><child link="neck_link"/>
+    <origin xyz="0 0 0.075"/><axis xyz="0 0 1"/>
+    <limit lower="-1.5" upper="1.5" effort="2" velocity="12"/>
+  </joint>
+
+  <link name="head_link">
+    <inertial><mass value="0.2"/><inertia ixx="2e-4" iyy="2e-4" izz="2e-4" ixy="0" ixz="0" iyz="0"/></inertial>
+    <visual><geometry><box size="0.08 0.07 0.06"/></geometry><material name="white"/></visual>
+    <collision><geometry><box size="0.08 0.07 0.06"/></geometry></collision>
+    <visual><origin xyz="0.045 0 -0.005"/><geometry><box size="0.04 0.04 0.03"/></geometry><material name="dark"/></visual>
+  </link>
+  <joint name="head_pitch" type="revolute">
+    <parent link="neck_link"/><child link="head_link"/>
+    <origin xyz="0 0 0.04"/><axis xyz="0 1 0"/>
+    <limit lower="-0.8" upper="0.8" effort="2" velocity="12"/>
+  </joint>
+</robot>

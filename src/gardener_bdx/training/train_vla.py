@@ -40,34 +40,50 @@ def main() -> None:
     from ..policy.vla_brain import ACTION_DIM
     from ..policy.vla_net import RGB_HW, WorldModelVLANet
 
-    d = np.load(args.data)
+    d = np.load(args.data, allow_pickle=True)
     dev = args.device if torch.cuda.is_available() or args.device == "cpu" else "cpu"
     N = d["actions"].shape[0]
-    print(f"loaded {N} samples from {args.data}; training on {dev}")
+
+    net = WorldModelVLANet(action_dim=ACTION_DIM).to(dev)
+    T = net.history_len
+    print(f"loaded {N} samples from {args.data}; training on {dev} (history={T})")
 
     proprio = torch.tensor(d["proprio"], dtype=torch.float32)
     tokens = torch.tensor(d["tokens"], dtype=torch.long)
     actions = torch.tensor(d["actions"], dtype=torch.float32)
     skills = torch.tensor(d["skills"], dtype=torch.long)
-    images = torch.tensor(d["images"], dtype=torch.float32).permute(0, 3, 1, 2) / 255.0
+    images = torch.tensor(d["images"], dtype=torch.float32).permute(0, 3, 1, 2) / 255.0  # (N,3,48,64)
 
-    def make_img(batch_imgs):
-        depth = torch.zeros(batch_imgs.shape[0], 1, batch_imgs.shape[2], batch_imgs.shape[3])
-        img = torch.cat([batch_imgs, depth], dim=1)
-        return F.interpolate(img, size=(RGB_HW, RGB_HW), mode="bilinear", align_corners=False)
+    # Temporal windows: for each sample i, the T indices [i-T+1 .. i] clamped to
+    # the start of i's episode (front-padded, never crossing an episode boundary).
+    ends = d["episode_ends"].tolist() if "episode_ends" in d else [N]
+    ep_start = np.zeros(N, dtype=np.int64)
+    s0 = 0
+    for e in ends:
+        ep_start[s0:e] = s0
+        s0 = e
+    ar = np.arange(N)
+    win = np.stack([np.maximum(ep_start, ar - (T - 1 - k)) for k in range(T)], axis=1)  # (N,T)
+    win = torch.tensor(win, dtype=torch.long)
 
-    net = WorldModelVLANet(action_dim=ACTION_DIM).to(dev)
+    def make_img_seq(seq):  # seq: (B,T,3,48,64) -> (B,T,4,96,96)
+        b, t = seq.shape[:2]
+        x = seq.flatten(0, 1)
+        x = torch.cat([x, torch.zeros(x.shape[0], 1, x.shape[2], x.shape[3])], dim=1)
+        x = F.interpolate(x, size=(RGB_HW, RGB_HW), mode="bilinear", align_corners=False)
+        return x.view(b, t, 4, RGB_HW, RGB_HW)
+
     opt = torch.optim.Adam(net.parameters(), lr=args.lr)
-
     for epoch in range(args.epochs):
         perm = torch.randperm(N)
         tot = 0.0
         for s in range(0, N, args.batch):
             idx = perm[s : s + args.batch]
-            img = make_img(images[idx]).to(dev)
-            bev = torch.zeros(len(idx), 1, 64, 64, device=dev)
-            pr = proprio[idx].to(dev)
-            tok = tokens[idx].to(dev)
+            wb = win[idx]                                   # (B,T)
+            img = make_img_seq(images[wb]).to(dev)          # (B,T,4,96,96)
+            bev = torch.zeros(len(idx), T, 1, 64, 64, device=dev)
+            pr = proprio[wb].to(dev)                        # (B,T,P)
+            tok = tokens[idx].to(dev)                       # (B,L) — instruction const within episode
             act = actions[idx].to(dev)
             sk = skills[idx].to(dev)
 

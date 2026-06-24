@@ -308,19 +308,26 @@ class NeuralVLA(VLAPolicy):
         self.system2_period = int(system2_period)
         self.net = WorldModelVLANet(action_dim=ACTION_DIM)
         self.net.load(checkpoint, device=device, backbone=backbone)
+        self._history_len = self.net.history_len
         self.reset()
 
     def reset(self) -> None:
         self._tick = 0
         self._latent = None  # cached System-2 reasoning latent
         self._skill = Skill.IDLE
+        self._history: list = []  # rolling window of recent observations
         self.net.reset()
 
     def act(self, obs, goal: TaskGoal, world: Optional[WorldBelief] = None) -> Intent:
+        # Maintain the temporal window the System-2 reasoner sees.
+        self._history.append(obs)
+        if len(self._history) > self._history_len:
+            self._history.pop(0)
+
         refresh_system2 = (self._tick % self.system2_period) == 0
-        # System 2: slow reasoning over vision+language -> latent + skill.
+        # System 2: slow reasoning over a *history* of vision+proprio + language.
         if refresh_system2 or self._latent is None:
-            self._latent, skill_id = self.net.reason(obs, goal.instruction)
+            self._latent, skill_id = self.net.reason(self._history, goal.instruction)
             self._skill = list(Skill)[int(skill_id) % len(Skill)]
         # System 1: fast flow-matching action head conditioned on the latent.
         a = self.net.act(obs, self._latent)  # np.ndarray (ACTION_DIM,)

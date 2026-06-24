@@ -85,18 +85,23 @@ command. Run the suite with `pytest`.
 Scale up (needs extras, see below):
 
 ```bash
+# 0) on a GPU box: one-command Omniverse bring-up (install into Isaac,
+#    URDF->USD, smoke-train). See docs/ISAACLAB.md.
+ISAACLAB_PATH=/opt/IsaacLab ./scripts/setup_omniverse.sh
+
 # 1a) train the fluid walk — quick MuJoCo/SB3 path (CPU-friendly)
 python -m gardener_bdx.training.train_locomotion --backend mujoco --num-envs 8
-# 1b) ...or at scale in Isaac Lab (thousands of envs on GPU), same export format
+# 1b) ...or at scale in Isaac Lab (thousands of envs on GPU, full DR), same export
 python -m gardener_bdx.training.train_isaaclab --num_envs 4096 --headless
 
-# 2) generate expert demos, then distill the end-to-end VLA from pixels
+# 2) generate expert demos, then distill the end-to-end (temporal) VLA from pixels
 python -m gardener_bdx.training.collect_demos --backend mujoco --render --episodes 200
 python -m gardener_bdx.training.train_vla --epochs 30
 
-# 3) run the full physics twin with the neural VLA
+# 3) run the full physics twin with the neural VLA, and score it
 python -m gardener_bdx.runtime.sim_main --backend mujoco --vla neural \
     --vla-ckpt models/policies/vla_bc.pt --render
+python -m gardener_bdx.training.evaluate --compare   # scripted vs neural: success/collisions/time
 
 # 4) ...or drive it with a fine-tuned GR00T N1 (see docs/GROOT.md)
 python -m gardener_bdx.training.export_lerobot --data data/expert_demos.npz --out data/gardener_lerobot
@@ -104,16 +109,18 @@ python -m gardener_bdx.runtime.sim_main --backend mujoco --vla groot --vla-ckpt 
 ```
 
 Install extras as needed: `pip install -e '.[sim]'` (MuJoCo), `'.[train]'`
-(PPO), `'.[vla]'` (torch). Isaac Sim/Isaac Lab install via NVIDIA Omniverse
-(docs/ISAACLAB.md); Isaac-GR00T from its NVIDIA repo (docs/GROOT.md).
+(PPO), `'.[vla]'` (torch), `'.[data]'` (LeRobot export). Isaac Sim/Isaac Lab
+install via NVIDIA Omniverse (docs/ISAACLAB.md); Isaac-GR00T from its NVIDIA repo
+(docs/GROOT.md).
 
 ---
 
 ## Repository map
 
 ```
-configs/                 robot, control rates, safety, domain-randomization, scene (YAML)
-models/robot/            MuJoCo MJCF of the BDX biped (+ USD seam for Isaac)
+configs/                 robot, control rates, safety, domain-randomization, scene, groot modality
+models/robot/            MuJoCo MJCF + URDF of the BDX biped (URDF→USD for Isaac)
+scripts/                 run_sim · convert_to_usd · setup_omniverse · train
 src/gardener_bdx/
   common/                types (the sim↔real contract), quaternion math, config
   interfaces/robot_io.py THE hardware-abstraction seam
@@ -127,8 +134,8 @@ src/gardener_bdx/
   safety/guardian.py     deterministic, Halos-aligned safety monitor
   sim/                   kinematic (runs now) · mujoco · isaac backends
   hardware/jetson_backend.py   real-robot RobotIO + driver seams
-  training/              numpy + Isaac Lab RL envs; rewards + DR; demo collection;
-                         VLA distillation; LeRobot export for GR00T fine-tuning
+  training/              numpy + Isaac Lab RL envs (event-based DR); rewards; demo
+                         collection; VLA distillation; LeRobot export; evaluate
   runtime/               sim_main · robot_main · the loop
 tests/                   math · safety · locomotion · rollout · VLA · training glue
 docs/                    ARCHITECTURE · SIMULATION · SIM2REAL · SAFETY · HARDWARE · ISAACLAB · GROOT

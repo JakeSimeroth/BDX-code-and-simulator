@@ -60,6 +60,21 @@ def test_neural_vla_inference_smoke():
     assert np.all(np.isfinite([c.vx, c.vy, c.wz, intent.dispense_rate_lps]))
 
 
+def test_eval_harness_runs_and_scores():
+    from gardener_bdx.common.config import HierarchyConfig, RobotConfig
+    from gardener_bdx.training.evaluate import aggregate, run_episode
+
+    rc = RobotConfig.from_yaml()
+    h = HierarchyConfig.from_yaml()
+    r = run_episode("kinematic", "scripted", "water the thirsty plants",
+                    steps=400, seed=1, vla_kwargs={}, dt=1.0 / h.locomotion_hz, rc=rc, h=h)
+    assert r.steps == 400
+    assert 0 <= r.serviced <= r.thirsty
+    assert r.water_delivered_l >= 0.0 and r.collisions >= 0
+    a = aggregate([r], 1.0 / h.locomotion_hz)
+    assert 0.0 <= a["success_rate"] <= 1.0
+
+
 def test_locomotion_observation_dim_matches_isaac():
     # The runtime obs builder and the Isaac env must agree on dimensionality.
     from gardener_bdx.common.config import RobotConfig
