@@ -1,0 +1,9 @@
+# Deterministic safety Guardian thresholds (NVIDIA Halos-aligned layer).
+# These are hard guarantees that hold regardless of what the learned policy does.
+tip_caution_cos: 0.80        # begin arresting toward safe stance below this
+tip_estop_cos: 0.35          # full protective stop / power damp below this
+human_stop_radius: 0.7       # m — freeze gait inside this radius of a person
+water_min_upright_cos: 0.90  # refuse to dispense while tilted (spill protection)
+geofence_min: [-5.8, -5.8]   # world-XY operating box (greenhouse footprint)
+geofence_max: [ 5.8,  5.8]
+rate_limit_scale: 1.0        # scales actuator velocity limits for slew limiting

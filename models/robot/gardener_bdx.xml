@@ -1,0 +1,112 @@
+<!-- GardenerBDX — MuJoCo MJCF model of a BDX-class bipedal gardener droid.
+     Joint order matches configs/robot/gardener_bdx.yaml exactly:
+       0 L_hip_yaw 1 L_hip_roll 2 L_hip_pitch 3 L_knee 4 L_ankle_pitch
+       5 R_hip_yaw 6 R_hip_roll 7 R_hip_pitch 8 R_knee 9 R_ankle_pitch
+       10 neck_yaw 11 head_pitch
+     This is the locomotion/training model (robot + ground). The greenhouse
+     task scene (plants, dock, human) is composited around it by the MuJoCo
+     backend. ~0.4 m tall, ~4 kg, a 2-DOF neck aims the head camera + LiDAR. -->
+<mujoco model="gardener_bdx">
+  <compiler angle="radian" autolimits="true"/>
+  <option timestep="0.002" gravity="0 0 -9.81" iterations="50" solver="Newton"/>
+
+  <default>
+    <joint damping="0.4" armature="0.01" frictionloss="0.05"/>
+    <geom contype="1" conaffinity="1" condim="3" friction="1.0 0.05 0.01" density="700"/>
+    <position kp="25" forcerange="-6 6"/>
+    <default class="head">
+      <position kp="8" forcerange="-2 2"/>
+    </default>
+  </default>
+
+  <worldbody>
+    <light name="top" pos="0 0 3" dir="0 0 -1" diffuse="0.8 0.8 0.8"/>
+    <geom name="floor" type="plane" size="10 10 0.1" rgba="0.85 0.85 0.85 1" friction="1.0 0.05 0.01"/>
+
+    <body name="torso" pos="0 0 0.33">
+      <freejoint name="root"/>
+      <inertial pos="0 0 0" mass="1.6" diaginertia="0.01 0.01 0.008"/>
+      <geom name="torso" type="box" size="0.06 0.05 0.07" rgba="0.2 0.5 0.9 1"/>
+      <!-- Carried water payload; mass shifts the CoM, exactly as on hardware. -->
+      <geom name="water_tank" type="cylinder" pos="0 0 0.02" size="0.035 0.05" rgba="0.3 0.6 1 0.5" mass="1.0"/>
+      <site name="imu" pos="0 0 0" size="0.01"/>
+
+      <!-- Neck + head (camera/LiDAR mount) -->
+      <body name="neck" pos="0 0 0.075">
+        <joint name="neck_yaw" axis="0 0 1" range="-1.5 1.5"/>
+        <geom name="neck" type="capsule" fromto="0 0 0 0 0 0.03" size="0.012" rgba="0.3 0.3 0.3 1"/>
+        <body name="head" pos="0 0 0.04">
+          <joint name="head_pitch" axis="0 1 0" range="-0.8 0.8"/>
+          <geom name="head" type="box" size="0.04 0.035 0.03" rgba="0.95 0.95 0.95 1"/>
+          <geom name="snout" type="box" pos="0.045 0 -0.005" size="0.02 0.02 0.015" rgba="0.2 0.2 0.2 1"/>
+          <camera name="head_camera" pos="0.06 0 0.0" xyaxes="0 -1 0 0 0 1" fovy="70"/>
+          <site name="lidar" pos="0.0 0 0.03" size="0.008"/>
+        </body>
+      </body>
+
+      <!-- LEFT LEG (hip yaw+roll share one body; intermediate links need mass) -->
+      <body name="left_hip" pos="0 0.05 -0.06">
+        <joint name="left_hip_yaw" axis="0 0 1" range="-0.6 0.6"/>
+        <joint name="left_hip_roll" axis="1 0 0" range="-0.4 0.4"/>
+        <geom type="sphere" size="0.025" rgba="0.3 0.3 0.3 1"/>
+        <body name="left_thigh" pos="0 0 0">
+          <joint name="left_hip_pitch" axis="0 1 0" range="-1.6 0.8"/>
+          <geom name="left_thigh" type="capsule" fromto="0 0 0 0 0 -0.12" size="0.018" rgba="0.6 0.6 0.6 1"/>
+          <body name="left_shank" pos="0 0 -0.12">
+            <joint name="left_knee" axis="0 1 0" range="0 1.8"/>
+            <geom name="left_shank" type="capsule" fromto="0 0 0 0 0 -0.12" size="0.015" rgba="0.6 0.6 0.6 1"/>
+            <body name="left_foot" pos="0 0 -0.12">
+              <joint name="left_ankle_pitch" axis="0 1 0" range="-1.0 0.6"/>
+              <geom name="left_foot" type="box" pos="0.02 0 -0.012" size="0.05 0.025 0.012" rgba="0.15 0.15 0.15 1"/>
+              <site name="left_foot_site" pos="0.02 0 -0.024" size="0.01"/>
+            </body>
+          </body>
+        </body>
+      </body>
+
+      <!-- RIGHT LEG -->
+      <body name="right_hip" pos="0 -0.05 -0.06">
+        <joint name="right_hip_yaw" axis="0 0 1" range="-0.6 0.6"/>
+        <joint name="right_hip_roll" axis="1 0 0" range="-0.4 0.4"/>
+        <geom type="sphere" size="0.025" rgba="0.3 0.3 0.3 1"/>
+        <body name="right_thigh" pos="0 0 0">
+          <joint name="right_hip_pitch" axis="0 1 0" range="-1.6 0.8"/>
+          <geom name="right_thigh" type="capsule" fromto="0 0 0 0 0 -0.12" size="0.018" rgba="0.6 0.6 0.6 1"/>
+          <body name="right_shank" pos="0 0 -0.12">
+            <joint name="right_knee" axis="0 1 0" range="0 1.8"/>
+            <geom name="right_shank" type="capsule" fromto="0 0 0 0 0 -0.12" size="0.015" rgba="0.6 0.6 0.6 1"/>
+            <body name="right_foot" pos="0 0 -0.12">
+              <joint name="right_ankle_pitch" axis="0 1 0" range="-1.0 0.6"/>
+              <geom name="right_foot" type="box" pos="0.02 0 -0.012" size="0.05 0.025 0.012" rgba="0.15 0.15 0.15 1"/>
+              <site name="right_foot_site" pos="0.02 0 -0.024" size="0.01"/>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <!-- Position actuators, one per joint, in canonical order. -->
+  <actuator>
+    <position name="left_hip_yaw"     joint="left_hip_yaw"     ctrlrange="-0.6 0.6"/>
+    <position name="left_hip_roll"    joint="left_hip_roll"    ctrlrange="-0.4 0.4"/>
+    <position name="left_hip_pitch"   joint="left_hip_pitch"   ctrlrange="-1.6 0.8"/>
+    <position name="left_knee"        joint="left_knee"        ctrlrange="0 1.8"/>
+    <position name="left_ankle_pitch" joint="left_ankle_pitch" ctrlrange="-1.0 0.6"/>
+    <position name="right_hip_yaw"    joint="right_hip_yaw"    ctrlrange="-0.6 0.6"/>
+    <position name="right_hip_roll"   joint="right_hip_roll"   ctrlrange="-0.4 0.4"/>
+    <position name="right_hip_pitch"  joint="right_hip_pitch"  ctrlrange="-1.6 0.8"/>
+    <position name="right_knee"       joint="right_knee"       ctrlrange="0 1.8"/>
+    <position name="right_ankle_pitch" joint="right_ankle_pitch" ctrlrange="-1.0 0.6"/>
+    <position name="neck_yaw"   class="head" joint="neck_yaw"   ctrlrange="-1.5 1.5"/>
+    <position name="head_pitch" class="head" joint="head_pitch" ctrlrange="-0.8 0.8"/>
+  </actuator>
+
+  <sensor>
+    <framequat   name="imu_quat" objtype="site" objname="imu"/>
+    <gyro        name="imu_gyro" site="imu"/>
+    <accelerometer name="imu_acc" site="imu"/>
+    <touch name="left_foot_touch"  site="left_foot_site"/>
+    <touch name="right_foot_touch" site="right_foot_site"/>
+  </sensor>
+</mujoco>

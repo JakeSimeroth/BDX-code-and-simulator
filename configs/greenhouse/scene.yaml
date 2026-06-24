@@ -1,0 +1,16 @@
+# Greenhouse task scene. Consumed by the simulator backends to lay out the
+# environment the gardener operates in.
+arena_half: 5.0          # m, half-extent of the (square) greenhouse footprint
+n_plants: 6              # potted plants across two benches
+sensor_range: 4.0        # m, effective camera+LiDAR detection range
+plant:
+  dryness_init: [0.2, 0.95]   # sampled per plant (0 watered .. 1 parched)
+  dry_rate_per_s: 0.0008      # how fast soil dries (task is never "done")
+  water_response: 2.5         # dryness drop per litre delivered
+dock:
+  position: [-4.4, -4.4]      # charging + refill station (world XY)
+  charge_rate_soc_per_s: 0.04
+  refill_rate_lps: 0.3
+human:
+  count: 1                    # a person pacing the central aisle
+  speed_mps: 0.4

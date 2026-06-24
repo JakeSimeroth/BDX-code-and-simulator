@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Project artifacts
+data/                       # collected expert demos
+models/policies/*.npz       # trained/exported locomotion policies
+models/policies/*.pt        # trained VLA checkpoints
+models/**/*.usd             # large Isaac USD assets (author locally)
+*.mp4
+*.log
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store

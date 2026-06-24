@@ -1,0 +1,16 @@
+# Domain randomization ranges — the core Sim2Real lever. Every RL episode draws
+# fresh dynamics/sensing/timing so the policy learns to be robust to the reality
+# gap rather than overfitting one perfect simulator.
+mass_scale: [0.85, 1.15]       # x nominal link masses
+friction: [0.6, 1.4]           # tangential floor/foot friction
+kp_scale: [0.8, 1.2]           # actuator position-gain spread
+kd_scale: [0.8, 1.2]
+latency_steps: [0, 2]          # actuation/observation delay (control ticks)
+obs_noise_std: 0.02            # gaussian noise on the policy observation
+imu_bias_std: 0.01
+push_interval_s: [3.0, 7.0]    # random base shoves to train recovery
+push_velocity: 0.6             # m/s impulse magnitude
+# Velocity-command curriculum the gait must track:
+cmd_vx: [-0.4, 0.6]
+cmd_vy: [-0.3, 0.3]
+cmd_wz: [-1.0, 1.0]

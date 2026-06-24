@@ -1,0 +1,15 @@
+# Control-rate schedule for the three-tier hierarchy + safety.
+# In simulation we may run the VLA as fast as we like; the rate decoupling is
+# what keeps motion fluid regardless of brain latency, and what makes the
+# eventual hardware port a question of compute budget, not architecture.
+rates:
+  locomotion_hz: 50.0   # System 0 — gait/balance substrate (and safety)
+  skill_hz: 20.0        # reserved for skill-level refinement
+  vla_hz: 5.0           # System 2/1 — VLA world model re-plan rate
+  safety_hz: 50.0       # Guardian runs at the motor rate
+
+paths:
+  locomotion_policy: models/policies/locomotion.npz  # exported RL gait (numpy)
+  vla_checkpoint: ""    # GR00T N1 / custom VLA weights; empty => scripted expert
+
+device: cuda            # falls back to cpu automatically if unavailable

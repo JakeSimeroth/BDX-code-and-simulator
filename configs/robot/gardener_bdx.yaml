@@ -1,0 +1,37 @@
+# GardenerBDX — kinematic/actuation description.
+# A BDX-class bipedal droid (~0.4 m standing), lineage of the Disney BDX /
+# Open Duck Mini, extended with a 2-DOF neck for camera/LiDAR aiming and a
+# carried water payload. Joint ORDER here is canonical and shared by the policy,
+# every simulator backend, and the hardware driver.
+name: gardener_bdx
+
+# Per-leg: hip_yaw, hip_roll, hip_pitch, knee, ankle_pitch (5 x 2 = 10)
+# Head:    neck_yaw, head_pitch (2)
+joints:
+  names:
+    - left_hip_yaw
+    - left_hip_roll
+    - left_hip_pitch
+    - left_knee
+    - left_ankle_pitch
+    - right_hip_yaw
+    - right_hip_roll
+    - right_hip_pitch
+    - right_knee
+    - right_ankle_pitch
+    - neck_yaw
+    - head_pitch
+  #         Lyaw Lroll Lpit  Lkne  Lank   Ryaw Rroll Rpit  Rkne  Rank   neck  head
+  lower:   [-0.6, -0.4, -1.6,  0.0, -1.0, -0.6, -0.4, -1.6,  0.0, -1.0, -1.5, -0.8]
+  upper:   [ 0.6,  0.4,  0.8,  1.8,  0.6,  0.6,  0.4,  0.8,  1.8,  0.6,  1.5,  0.8]
+  default: [ 0.0,  0.0, -0.4,  0.8, -0.4,  0.0,  0.0, -0.4,  0.8, -0.4,  0.0,  0.0]
+  velocity_limit: [20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 12, 12]
+  torque_limit:   [ 6,  6,  6,  6,  6,  6,  6,  6,  6,  6,  2,  2]
+  kp:             [25, 25, 25, 25, 25, 25, 25, 25, 25, 25,  8,  8]
+  kd:             [0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.6,0.3,0.3]
+
+action_scale: 0.5          # policy output (-1..1) -> rad delta about default
+base_height_nominal: 0.35  # m, nominal standing CoM height
+foot_link_names: [left_foot, right_foot]
+mass_kg: 4.2
+water_capacity_liters: 1.5

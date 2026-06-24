@@ -1,0 +1,8 @@
+# Core (runs the kinematic twin, the control stack, and numpy policy inference).
+# For heavier backends/trainers install the extras instead:
+#   pip install -e '.[sim]'    # MuJoCo
+#   pip install -e '.[train]'  # PPO locomotion RL (torch + stable-baselines3 + gymnasium)
+#   pip install -e '.[vla]'    # neural VLA (torch)
+#   pip install -e '.[all]'    # everything above + pytest
+numpy>=1.24
+pyyaml>=6.0

@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gardener-bdx"
+version = "0.1.0"
+description = "VLA-driven control stack for a BDX-inspired bipedal greenhouse-gardener droid (digital twin + Sim2Real)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+# Core deps are intentionally tiny so the stack runs anywhere — including a
+# minimal Jetson image and CI — with the kinematic twin and numpy policy inference.
+dependencies = [
+    "numpy>=1.24",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+sim = ["mujoco>=3.1"]                              # MuJoCo full-physics backend
+train = ["torch>=2.2", "stable-baselines3>=2.3", "gymnasium>=0.29"]  # locomotion RL
+vla = ["torch>=2.2"]                               # neural VLA inference/training
+dev = ["pytest>=7.4"]
+all = ["mujoco>=3.1", "torch>=2.2", "stable-baselines3>=2.3", "gymnasium>=0.29", "pytest>=7.4"]
+# Isaac Sim / Isaac Lab are installed via NVIDIA Omniverse, not pip — see docs/SIMULATION.md.
+
+[project.scripts]
+gardener-sim = "gardener_bdx.runtime.sim_main:main"
+gardener-robot = "gardener_bdx.runtime.robot_main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# Note: configs/ and models/ live at the repo root and are resolved at runtime
+# via gardener_bdx.common.config.repo_root() (the stack is meant to run from a
+# checkout / editable install), so they are not bundled as package data.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

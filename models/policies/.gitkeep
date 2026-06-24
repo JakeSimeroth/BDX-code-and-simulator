@@ -1,0 +1,4 @@
+# Trained/exported policies land here:
+#   locomotion.npz  — RL gait policy (numpy, loaded by the runtime)
+#   vla_bc.pt       — distilled VLA checkpoint (loaded by NeuralVLA)
+# These are build artifacts and are gitignored; this file keeps the dir present.
