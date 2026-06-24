@@ -17,8 +17,12 @@ models/policies/*.npz
 models/policies/*.pt
 # large Isaac USD assets (author locally)
 models/**/*.usd
+# generated visualizations / logs
+out/
 *.mp4
+*.gif
 *.log
+logs/
 
 # Tooling
 .pytest_cache/

@@ -21,9 +21,10 @@ sim = ["mujoco>=3.1"]                              # MuJoCo full-physics backend
 train = ["torch>=2.2", "stable-baselines3>=2.3", "gymnasium>=0.29"]  # locomotion RL
 vla = ["torch>=2.2"]                               # neural VLA inference/training
 data = ["pandas>=2.0", "pyarrow>=14", "imageio[ffmpeg]>=2.30"]  # LeRobot export for GR00T
+viz = ["matplotlib>=3.7", "imageio>=2.30"]         # top-down + GIF visualization
 dev = ["pytest>=7.4"]
 all = ["mujoco>=3.1", "torch>=2.2", "stable-baselines3>=2.3", "gymnasium>=0.29",
-       "pandas>=2.0", "pyarrow>=14", "imageio[ffmpeg]>=2.30", "pytest>=7.4"]
+       "pandas>=2.0", "pyarrow>=14", "imageio[ffmpeg]>=2.30", "matplotlib>=3.7", "pytest>=7.4"]
 # Isaac Sim / Isaac Lab install via NVIDIA Omniverse (docs/ISAACLAB.md);
 # NVIDIA Isaac-GR00T installs from its own repo (docs/GROOT.md). Neither is on PyPI.
 
