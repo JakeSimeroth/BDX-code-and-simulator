@@ -124,7 +124,7 @@ install via NVIDIA Omniverse (docs/ISAACLAB.md); Isaac-GR00T from its NVIDIA rep
 ```
 configs/                 robot, control rates, safety, domain-randomization, scene, groot modality
 models/robot/            MuJoCo MJCF + URDF of the BDX biped (URDF→USD for Isaac)
-scripts/                 preflight · view_kinematic · view_mujoco · convert_to_usd · setup_omniverse · train
+scripts/                 preflight · view_kinematic · view_mujoco · run_isaac (interactive) · convert_to_usd · setup_omniverse
 src/gardener_bdx/
   common/                types (the sim↔real contract), quaternion math, config
   interfaces/robot_io.py THE hardware-abstraction seam
@@ -150,6 +150,7 @@ docs/                    ARCHITECTURE · SIMULATION · SIM2REAL · SAFETY · HAR
 - [`docs/GETTING_STARTED_GPU.md`](docs/GETTING_STARTED_GPU.md) — **RTX 4070 runbook**: deploy, train, refine, test.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the four tiers in depth, data flow, why hierarchy.
 - [`docs/SIMULATION.md`](docs/SIMULATION.md) — the digital-twin recommendation and setup.
+- [`docs/ISAACSIM.md`](docs/ISAACSIM.md) — **interactive** Isaac Sim: drive/inspect the twin in the GUI.
 - [`docs/ISAACLAB.md`](docs/ISAACLAB.md) — parallel locomotion RL training + numpy export.
 - [`docs/GROOT.md`](docs/GROOT.md) — GR00T N1 fine-tuning (LeRobot export) + deploy.
 - [`docs/SIM2REAL.md`](docs/SIM2REAL.md) — domain randomization and the transfer plan.

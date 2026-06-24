@@ -44,11 +44,12 @@ ISAACLAB_PATH=~/IsaacLab ./scripts/setup_omniverse.sh   # install + URDF→USD +
 |---|---|---|
 | the **gardening behavior** (path, watering, dock, human), fast | `python scripts/view_kinematic.py --gif out/gardener.gif` | matplotlib |
 | the **robot in physics** (gait, balance, contact) | `python scripts/view_mujoco.py --view` | mujoco + display |
-| the **photoreal twin** (what the VLA's camera sees) | Isaac Sim GUI (below) | Isaac Lab |
+| the **photoreal twin — and interact with it** (orbit, drag plants, lighting) | `python scripts/run_isaac.py` | Isaac Sim |
 
 The kinematic GIF is the quickest sanity check of *task* logic. The MuJoCo
 viewer is for *gait* debugging — with no trained policy the droid falls and the
-Guardian e-stops (expected); after step 2 it walks.
+Guardian e-stops (expected); after step 2 it walks. **Isaac Sim is the
+interactive twin** you asked about — see §6 and [ISAACSIM.md](ISAACSIM.md).
 
 ---
 
@@ -167,10 +168,12 @@ that head on labeled greenhouse images.
 
 ## 6. Visualizing & working with it — which tool when
 
-- **Isaac Sim GUI** — the photoreal twin. Use it for anything *vision/VLA*
-  (what the camera sees, lighting/domain randomization, the full gardener loop in
-  a realistic greenhouse) and for inspecting the imported robot. Launch training
-  without `--headless`, or open a stage interactively. Heaviest, most realistic.
+- **Isaac Sim GUI** (`python scripts/run_isaac.py`) — the **interactive** photoreal
+  twin. A window opens with the gardener running live; orbit/pause, drag plants or
+  the person, change lighting — the loop reads your edits each tick (interactive
+  domain randomization + safety testing). Full guide: [ISAACSIM.md](ISAACSIM.md).
+  Use it for anything vision/VLA and for inspecting the imported robot. Heaviest,
+  most realistic.
 - **MuJoCo viewer** (`scripts/view_mujoco.py --view`) — the gait lab. Fast,
   contact-accurate, perfect for debugging balance/locomotion and the exported
   policy. No photorealism.
