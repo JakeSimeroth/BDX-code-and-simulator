@@ -51,7 +51,9 @@ def main() -> None:
 
     rc = RobotConfig.from_yaml()
     h = HierarchyConfig.from_yaml()
-    proprio, tokens, actions, skills, imgs, bevs = [], [], [], [], [], []
+    proprio, tokens, actions, skills, imgs = [], [], [], [], []
+    instr_per_sample: list[str] = []
+    episode_ends: list[int] = []
 
     for ep in range(args.episodes):
         instr = INSTRUCTIONS[ep % len(INSTRUCTIONS)]
@@ -60,7 +62,6 @@ def main() -> None:
         ctrl = GardenerController(rc, h, goal=instr, vla=ScriptedGardenerVLA())
         for i, info in enumerate(loop.run(ctrl, io, steps=args.steps)):
             o = info.obs
-            from .locomotion_env import locomotion_observation  # local to avoid cycle at import
             from ..common.math_utils import projected_gravity
             g = projected_gravity(o.imu.orientation)
             proprio.append(np.concatenate([o.joints.positions, o.joints.velocities, g,
@@ -70,7 +71,9 @@ def main() -> None:
             actions.append(_intent_to_action_vec(info.intent))
             skills.append(SKILLS.index(info.intent.skill.value))
             imgs.append(o.camera.rgb.astype(np.uint8) if o.camera is not None else np.zeros((48, 64, 3), np.uint8))
+            instr_per_sample.append(instr)
         io.close()
+        episode_ends.append(len(actions))  # cumulative sample count = episode boundary
         print(f"episode {ep+1}/{args.episodes}  samples={len(actions)}")
 
     import os
@@ -80,8 +83,10 @@ def main() -> None:
         proprio=np.stack(proprio), tokens=np.stack(tokens),
         actions=np.stack(actions), skills=np.array(skills, np.int64),
         images=np.stack(imgs), action_keys=np.array(ACTION_KEYS),
+        episode_ends=np.array(episode_ends, np.int64),
+        instructions=np.array(instr_per_sample),
     )
-    print(f"saved {len(actions)} samples -> {args.out}")
+    print(f"saved {len(actions)} samples / {len(episode_ends)} episodes -> {args.out}")
 
 
 if __name__ == "__main__":

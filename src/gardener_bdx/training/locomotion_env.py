@@ -67,6 +67,12 @@ class LocomotionEnv(_BASE):
 
     # -- gym API ---------------------------------------------------------- #
     def reset(self, *, seed=None, options=None):
+        if _GYM:
+            super().reset(seed=seed)
+        # Honor the seed for reproducible RL: reseed the randomizer so the same
+        # seed reproduces the same episode (dynamics + command).
+        if seed is not None and self.dr is not None:
+            self.dr.rng = np.random.default_rng(seed)
         obs0 = self.io.reset()
         self._params = self.dr.sample_episode() if self.dr else None
         if self._params is not None:

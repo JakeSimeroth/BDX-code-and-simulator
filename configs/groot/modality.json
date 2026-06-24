@@ -1,0 +1,21 @@
+{
+  "_comment": "GR00T new-embodiment modality map for GardenerBDX. Defines how the concatenated state/action vectors split into named fields, and the video/annotation keys. Used both for fine-tuning (gr00t finetune) and inference (policy/groot_vla.py). State order must match GR00TVLA._build_observation.",
+  "state": {
+    "joint_pos": { "start": 0, "end": 12 },
+    "joint_vel": { "start": 12, "end": 24 },
+    "imu":       { "start": 24, "end": 30 },
+    "payload":   { "start": 30, "end": 32 }
+  },
+  "action": {
+    "base":  { "start": 0, "end": 3 },
+    "head":  { "start": 3, "end": 6 },
+    "water": { "start": 6, "end": 7 }
+  },
+  "video": {
+    "head_camera": { "original_key": "observation.images.head_camera" }
+  },
+  "annotation": {
+    "task_description": { "original_key": "annotation.human.task_description" }
+  },
+  "action_horizon": 16
+}

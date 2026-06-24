@@ -25,6 +25,7 @@ docs/SIM2REAL.md.
 
 from __future__ import annotations
 
+import zlib
 from typing import Optional, Tuple
 
 import numpy as np
@@ -263,8 +264,11 @@ def _obs_to_tensors(obs, instruction: str, device):
 
 
 def _hash_tokens(text: str, max_len: int = 16):
+    # Stable, process-independent hashing (Python's built-in hash() is salted per
+    # process via PYTHONHASHSEED, which would desync tokens between data
+    # collection, training, and inference). crc32 is deterministic everywhere.
     words = (text or "<pad>").lower().split()[:max_len]
-    ids = [(hash(w) % (VOCAB - 1)) + 1 for w in words] or [0]
+    ids = [(zlib.crc32(w.encode("utf-8")) % (VOCAB - 1)) + 1 for w in words] or [0]
     ids += [0] * (max_len - len(ids))
     return np.asarray(ids[:max_len], dtype=np.int64)
 

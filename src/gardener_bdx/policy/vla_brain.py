@@ -351,8 +351,10 @@ def build_vla(kind: str = "scripted", **kwargs) -> VLAPolicy:
     kind = kind.lower()
     if kind in ("scripted", "expert", "oracle"):
         return ScriptedGardenerVLA(**kwargs)
-    if kind in ("neural", "vla", "world_model", "groot"):
-        if kind == "groot":
-            kwargs.setdefault("backbone", "groot")
+    if kind == "groot":
+        from .groot_vla import GR00TVLA  # lazy: pulls in the gr00t stack
+
+        return GR00TVLA(**kwargs)
+    if kind in ("neural", "vla", "world_model"):
         return NeuralVLA(**kwargs)
     raise ValueError(f"unknown VLA kind: {kind!r}")

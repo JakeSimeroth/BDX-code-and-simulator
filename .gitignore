@@ -8,11 +8,15 @@ dist/
 .venv/
 venv/
 
-# Project artifacts
-data/                       # collected expert demos
-models/policies/*.npz       # trained/exported locomotion policies
-models/policies/*.pt        # trained VLA checkpoints
-models/**/*.usd             # large Isaac USD assets (author locally)
+# Project artifacts (note: .gitignore comments must be on their own line)
+# collected expert demos / converted datasets
+data/
+# trained/exported locomotion policies
+models/policies/*.npz
+# trained VLA checkpoints
+models/policies/*.pt
+# large Isaac USD assets (author locally)
+models/**/*.usd
 *.mp4
 *.log
 

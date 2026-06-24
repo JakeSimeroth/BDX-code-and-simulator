@@ -85,8 +85,10 @@ command. Run the suite with `pytest`.
 Scale up (needs extras, see below):
 
 ```bash
-# 1) train the fluid walk in physics, export a numpy policy for the robot
-python -m gardener_bdx.training.train_locomotion --backend mujoco --num-envs 4096
+# 1a) train the fluid walk — quick MuJoCo/SB3 path (CPU-friendly)
+python -m gardener_bdx.training.train_locomotion --backend mujoco --num-envs 8
+# 1b) ...or at scale in Isaac Lab (thousands of envs on GPU), same export format
+python -m gardener_bdx.training.train_isaaclab --num_envs 4096 --headless
 
 # 2) generate expert demos, then distill the end-to-end VLA from pixels
 python -m gardener_bdx.training.collect_demos --backend mujoco --render --episodes 200
@@ -95,10 +97,15 @@ python -m gardener_bdx.training.train_vla --epochs 30
 # 3) run the full physics twin with the neural VLA
 python -m gardener_bdx.runtime.sim_main --backend mujoco --vla neural \
     --vla-ckpt models/policies/vla_bc.pt --render
+
+# 4) ...or drive it with a fine-tuned GR00T N1 (see docs/GROOT.md)
+python -m gardener_bdx.training.export_lerobot --data data/expert_demos.npz --out data/gardener_lerobot
+python -m gardener_bdx.runtime.sim_main --backend mujoco --vla groot --vla-ckpt <ckpt> --render
 ```
 
 Install extras as needed: `pip install -e '.[sim]'` (MuJoCo), `'.[train]'`
-(PPO), `'.[vla]'` (torch). Isaac Sim installs via NVIDIA Omniverse.
+(PPO), `'.[vla]'` (torch). Isaac Sim/Isaac Lab install via NVIDIA Omniverse
+(docs/ISAACLAB.md); Isaac-GR00T from its NVIDIA repo (docs/GROOT.md).
 
 ---
 
@@ -114,22 +121,26 @@ src/gardener_bdx/
   policy/
     vla_brain.py         ★ the VLA: NeuralVLA (end-to-end) + ScriptedGardenerVLA (expert/teacher)
     vla_net.py           dual-system torch net: VLM reasoning + flow-matching action head
+    groot_vla.py         GR00T N1 backbone adapter (new-embodiment, action chunking)
     locomotion.py        System 0 RL gait policy (numpy inference + CPG fallback)
     runner.py            the multi-rate control graph
   safety/guardian.py     deterministic, Halos-aligned safety monitor
   sim/                   kinematic (runs now) · mujoco · isaac backends
   hardware/jetson_backend.py   real-robot RobotIO + driver seams
-  training/              locomotion RL env + rewards + DR; expert-demo collection; VLA distillation
+  training/              numpy + Isaac Lab RL envs; rewards + DR; demo collection;
+                         VLA distillation; LeRobot export for GR00T fine-tuning
   runtime/               sim_main · robot_main · the loop
-tests/                   math · safety guarantees · locomotion · end-to-end rollout · VLA
-docs/                    ARCHITECTURE · SIMULATION · SIM2REAL · SAFETY · HARDWARE
+tests/                   math · safety · locomotion · rollout · VLA · training glue
+docs/                    ARCHITECTURE · SIMULATION · SIM2REAL · SAFETY · HARDWARE · ISAACLAB · GROOT
 ```
 
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the four tiers in depth, data flow, why hierarchy.
 - [`docs/SIMULATION.md`](docs/SIMULATION.md) — the digital-twin recommendation and setup.
-- [`docs/SIM2REAL.md`](docs/SIM2REAL.md) — domain randomization, GR00T, the transfer plan.
+- [`docs/ISAACLAB.md`](docs/ISAACLAB.md) — parallel locomotion RL training + numpy export.
+- [`docs/GROOT.md`](docs/GROOT.md) — GR00T N1 fine-tuning (LeRobot export) + deploy.
+- [`docs/SIM2REAL.md`](docs/SIM2REAL.md) — domain randomization and the transfer plan.
 - [`docs/SAFETY.md`](docs/SAFETY.md) — the Guardian and Halos alignment.
 - [`docs/HARDWARE.md`](docs/HARDWARE.md) — BOM, sensors, actuators, the Jetson bring-up.
 

@@ -77,7 +77,7 @@ def main() -> None:
             opt.zero_grad()
             loss.backward()
             opt.step()
-            tot += float(loss) * len(idx)
+            tot += loss.item() * len(idx)
         print(f"epoch {epoch+1}/{args.epochs}  loss={tot / N:.4f}")
 
     torch.save({"model": net.state_dict()}, args.out)
