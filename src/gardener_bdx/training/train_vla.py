@@ -29,6 +29,8 @@ def main() -> None:
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--out", default="models/policies/vla_bc.pt")
+    ap.add_argument("--skill-weight", type=float, default=0.5,
+                    help="weight on the System-2 skill cross-entropy vs. the flow loss")
     args = ap.parse_args()
 
     try:
@@ -46,13 +48,26 @@ def main() -> None:
 
     net = WorldModelVLANet(action_dim=ACTION_DIM).to(dev)
     T = net.history_len
-    print(f"loaded {N} samples from {args.data}; training on {dev} (history={T})")
+
+    # Standardize the (mixed-scale) action vector and detect which optional
+    # vision channels this dataset actually carries — both are saved in the
+    # checkpoint so inference feeds the net exactly what it trained on.
+    a_np = d["actions"].astype(np.float32)
+    net.set_action_stats(a_np.mean(0), a_np.std(0))
+    has_depth = "depths" in d.files and bool(np.any(d["depths"]))
+    has_bev = "bev" in d.files and bool(np.any(d["bev"]))
+    net.set_modalities(has_depth, has_bev)
+    print(f"loaded {N} samples from {args.data}; training on {dev} "
+          f"(history={T}, depth={has_depth}, bev={has_bev})")
 
     proprio = torch.tensor(d["proprio"], dtype=torch.float32)
     tokens = torch.tensor(d["tokens"], dtype=torch.long)
-    actions = torch.tensor(d["actions"], dtype=torch.float32)
+    actions = torch.tensor(a_np, dtype=torch.float32)
     skills = torch.tensor(d["skills"], dtype=torch.long)
     images = torch.tensor(d["images"], dtype=torch.float32).permute(0, 3, 1, 2) / 255.0  # (N,3,48,64)
+    depth = (torch.tensor(d["depths"], dtype=torch.float32).unsqueeze(1) / 5.0
+             if has_depth else torch.zeros(N, 1, images.shape[2], images.shape[3]))
+    bev_all = torch.tensor(d["bev"], dtype=torch.float32).unsqueeze(1) if has_bev else None
 
     # Temporal windows: for each sample i, the T indices [i-T+1 .. i] clamped to
     # the start of i's episode (front-padded, never crossing an episode boundary).
@@ -66,35 +81,48 @@ def main() -> None:
     win = np.stack([np.maximum(ep_start, ar - (T - 1 - k)) for k in range(T)], axis=1)  # (N,T)
     win = torch.tensor(win, dtype=torch.long)
 
-    def make_img_seq(seq):  # seq: (B,T,3,48,64) -> (B,T,4,96,96)
-        b, t = seq.shape[:2]
-        x = seq.flatten(0, 1)
-        x = torch.cat([x, torch.zeros(x.shape[0], 1, x.shape[2], x.shape[3])], dim=1)
+    def make_img_seq(rgb_seq, depth_seq):  # (B,T,3,h,w)+(B,T,1,h,w) -> (B,T,4,96,96)
+        b, t = rgb_seq.shape[:2]
+        x = torch.cat([rgb_seq.flatten(0, 1), depth_seq.flatten(0, 1)], dim=1)
         x = F.interpolate(x, size=(RGB_HW, RGB_HW), mode="bilinear", align_corners=False)
         return x.view(b, t, 4, RGB_HW, RGB_HW)
 
     opt = torch.optim.Adam(net.parameters(), lr=args.lr)
-    for epoch in range(args.epochs):
-        perm = torch.randperm(N)
-        tot = 0.0
-        for s in range(0, N, args.batch):
-            idx = perm[s : s + args.batch]
-            wb = win[idx]                                   # (B,T)
-            img = make_img_seq(images[wb]).to(dev)          # (B,T,4,96,96)
-            bev = torch.zeros(len(idx), T, 1, 64, 64, device=dev)
-            pr = proprio[wb].to(dev)                        # (B,T,P)
-            tok = tokens[idx].to(dev)                       # (B,L) — instruction const within episode
-            act = actions[idx].to(dev)
-            sk = skills[idx].to(dev)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(1, args.epochs))
+    n_val = max(1, N // 10)
+    train_idx = torch.arange(0, N - n_val)
+    val_idx = torch.arange(N - n_val, N)             # last 10% as a quick holdout
 
-            latent, skill_logits, proprio_embed = net.encode(img, bev, pr, tok)
-            cond = torch.cat([latent, proprio_embed], dim=-1)
-            loss = net.flow_matching_loss(cond, act) + F.cross_entropy(skill_logits, sk)
+    def batch_loss(idx):
+        wb = win[idx]                                       # (B,T)
+        img = make_img_seq(images[wb], depth[wb]).to(dev)   # (B,T,4,96,96)
+        bev = (bev_all[wb].to(dev) if bev_all is not None
+               else torch.zeros(len(idx), T, 1, 64, 64, device=dev))
+        pr = proprio[wb].to(dev)                            # (B,T,P)
+        tok = tokens[idx].to(dev)                           # (B,L) — const within an episode
+        act = net.normalize_action(actions[idx].to(dev))    # learn in standardized space
+        sk = skills[idx].to(dev)
+        latent, skill_logits, proprio_embed = net.encode(img, bev, pr, tok)
+        cond = net.action_cond(latent, proprio_embed, skill_logits)
+        return net.flow_matching_loss(cond, act) + args.skill_weight * F.cross_entropy(skill_logits, sk)
+
+    for epoch in range(args.epochs):
+        net.train()
+        perm = train_idx[torch.randperm(len(train_idx))]
+        tot = 0.0
+        for s in range(0, len(perm), args.batch):
+            idx = perm[s : s + args.batch]
+            loss = batch_loss(idx)
             opt.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
             opt.step()
             tot += loss.item() * len(idx)
-        print(f"epoch {epoch+1}/{args.epochs}  loss={tot / N:.4f}")
+        sched.step()
+        net.eval()
+        with torch.no_grad():
+            val = batch_loss(val_idx).item()
+        print(f"epoch {epoch+1}/{args.epochs}  train_loss={tot / len(perm):.4f}  val_loss={val:.4f}")
 
     torch.save({"model": net.state_dict()}, args.out)
     print(f"saved VLA checkpoint -> {args.out}")

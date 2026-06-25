@@ -314,6 +314,7 @@ class NeuralVLA(VLAPolicy):
     def reset(self) -> None:
         self._tick = 0
         self._latent = None  # cached System-2 reasoning latent
+        self._skill_vec = None  # cached System-2 skill embedding for System 1
         self._skill = Skill.IDLE
         self._history: list = []  # rolling window of recent observations
         self.net.reset()
@@ -327,10 +328,10 @@ class NeuralVLA(VLAPolicy):
         refresh_system2 = (self._tick % self.system2_period) == 0
         # System 2: slow reasoning over a *history* of vision+proprio + language.
         if refresh_system2 or self._latent is None:
-            self._latent, skill_id = self.net.reason(self._history, goal.instruction)
+            self._latent, skill_id, self._skill_vec = self.net.reason(self._history, goal.instruction)
             self._skill = list(Skill)[int(skill_id) % len(Skill)]
-        # System 1: fast flow-matching action head conditioned on the latent.
-        a = self.net.act(obs, self._latent)  # np.ndarray (ACTION_DIM,)
+        # System 1: fast flow-matching action head conditioned on latent + skill.
+        a = self.net.act(obs, self._latent, self._skill_vec)  # np.ndarray (ACTION_DIM,)
         self._tick += 1
 
         cmd = LocomotionCommand(

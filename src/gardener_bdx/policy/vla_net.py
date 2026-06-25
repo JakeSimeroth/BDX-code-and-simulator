@@ -43,6 +43,7 @@ BEV_RANGE = 6.0     # metres mapped across the BEV grid
 EMB = 256           # per-modality embedding width
 LATENT_DIM = 256    # System-2 reasoning latent width
 HISTORY_LEN = 4     # number of past frames the VLA reasons over
+SKILL_EMB = 32      # width of the skill embedding fed forward to System 1
 
 
 def _require_torch():
@@ -123,6 +124,27 @@ if _TORCH_OK:
                 x = x + self.velocity(x, t, cond) * dt
             return x
 
+    class _ModalityFusion(nn.Module):
+        """Learned fusion of the per-frame modality embeddings (camera, LiDAR-BEV,
+        proprio). Replaces naive averaging: a softmax gate weights each modality
+        per frame, then an MLP mixes the gated concatenation — so the model can
+        lean on the camera/depth for fine plant cues and on BEV/proprio for
+        obstacles and balance, instead of blending them into one blurred vector."""
+
+        def __init__(self, dim: int = EMB, n_modalities: int = 3):
+            super().__init__()
+            self.n = n_modalities
+            self.gate = nn.Linear(dim * n_modalities, n_modalities)
+            self.proj = nn.Sequential(
+                nn.Linear(dim * n_modalities, dim), nn.SiLU(), nn.LayerNorm(dim)
+            )
+
+        def forward(self, mods):  # list of (B,T,EMB) -> (B,T,EMB)
+            stk = torch.stack(mods, dim=-2)             # (B,T,M,EMB)
+            cat = stk.flatten(-2)                        # (B,T,M*EMB)
+            w = torch.softmax(self.gate(cat), dim=-1).unsqueeze(-1)  # (B,T,M,1)
+            return self.proj((stk * w).flatten(-2))      # (B,T,EMB)
+
     class WorldModelVLANet(nn.Module):
         def __init__(self, action_dim: int, history_len: int = HISTORY_LEN):
             super().__init__()
@@ -130,17 +152,29 @@ if _TORCH_OK:
             self.history_len = history_len
             self.rgb_enc = _ResidualConvEncoder(in_ch=4, out_dim=EMB)   # RGB + depth
             self.bev_enc = _ResidualConvEncoder(in_ch=1, out_dim=EMB)   # LiDAR BEV
-            self.proprio_enc = nn.Sequential(nn.LazyLinear(EMB), nn.SiLU(), nn.Linear(EMB, EMB))
+            self.proprio_enc = nn.Sequential(
+                nn.LazyLinear(EMB), nn.SiLU(), nn.Linear(EMB, EMB), nn.LayerNorm(EMB)
+            )
             self.text_enc = _TextEncoder(out_dim=EMB)
+            self.fusion = _ModalityFusion(EMB, n_modalities=3)  # learned, not averaged
 
             # System 2: a temporal transformer over [language, frame_1..frame_T].
             self.pos = nn.Parameter(torch.zeros(1, history_len + 1, EMB))
             layer = nn.TransformerEncoderLayer(d_model=EMB, nhead=4, dim_feedforward=512, batch_first=True)
             self.temporal = nn.TransformerEncoder(layer, num_layers=2)
             self.skill_head = nn.Linear(LATENT_DIM, 6)  # len(Skill)
+            self.skill_emb = nn.Embedding(6, SKILL_EMB)  # feeds the chosen skill to System 1
 
-            # System 1: flow head conditioned on [latent, current proprio].
-            self.action_head = _FlowActionHead(action_dim, cond_dim=LATENT_DIM + EMB)
+            # System 1: flow head conditioned on [latent, current proprio, skill].
+            self.action_head = _FlowActionHead(action_dim, cond_dim=LATENT_DIM + EMB + SKILL_EMB)
+
+            # Action standardization (filled from data in train_vla) and the
+            # modality-availability flags — both ride in the checkpoint so
+            # inference feeds the net exactly the channels it was trained on.
+            self.register_buffer("action_mean", torch.zeros(action_dim))
+            self.register_buffer("action_std", torch.ones(action_dim))
+            self.register_buffer("use_depth", torch.ones(()))
+            self.register_buffer("use_bev", torch.ones(()))
             self._backbone = "world_model"
 
         # -- shared encoder (batched, differentiable, temporal) ------------ #
@@ -151,11 +185,46 @@ if _TORCH_OK:
             rgb = self.rgb_enc(img.flatten(0, 1)).view(B, T, EMB)
             bv = self.bev_enc(bev.flatten(0, 1)).view(B, T, EMB)
             pro = self.proprio_enc(proprio)                       # (B,T,EMB)
-            per_step = (rgb + bv + pro) / 3.0                     # fuse modalities per frame
+            per_step = self.fusion([rgb, bv, pro])                # learned per-frame fusion
             text = self.text_enc(tokens).unsqueeze(1)             # (B,1,EMB)
             seq = torch.cat([text, per_step], dim=1) + self.pos[:, : T + 1]
             latent = self.temporal(seq)[:, -1]                    # last position summarizes history+goal
             return latent, self.skill_head(latent), pro[:, -1]
+
+        # -- System-1 conditioning, action scaling, modality gating --------- #
+        def _skill_vec(self, skill_logits):
+            """Soft skill embedding — differentiable and identical at train and
+            inference (no ground-truth-skill leakage into the action head)."""
+            return torch.softmax(skill_logits, dim=-1) @ self.skill_emb.weight
+
+        def action_cond(self, latent, proprio_embed, skill_logits):
+            """Condition the flow head on [reasoning latent, fresh proprio, skill]."""
+            return torch.cat([latent, proprio_embed, self._skill_vec(skill_logits)], dim=-1)
+
+        def set_action_stats(self, mean, std):
+            self.action_mean.copy_(torch.as_tensor(mean, dtype=torch.float32))
+            self.action_std.copy_(torch.as_tensor(std, dtype=torch.float32).clamp_min(1e-3))
+
+        def normalize_action(self, a):
+            return (a - self.action_mean) / self.action_std
+
+        def denormalize_action(self, a):
+            return a * self.action_std + self.action_mean
+
+        def set_modalities(self, use_depth: bool, use_bev: bool):
+            self.use_depth.fill_(1.0 if use_depth else 0.0)
+            self.use_bev.fill_(1.0 if use_bev else 0.0)
+
+        def _apply_modality_mask(self, img, bev):
+            """Zero any vision channel the net was *not* trained with, so a fresh
+            real depth/LiDAR stream can't feed the model out-of-distribution
+            signal it never saw during behavior cloning."""
+            if float(self.use_bev) < 0.5:
+                bev = torch.zeros_like(bev)
+            if float(self.use_depth) < 0.5:
+                img = img.clone()
+                img[:, :, 3:4].zero_()
+            return img, bev
 
         def flow_matching_loss(self, cond, target_actions):
             """Rectified-flow loss for System 1."""
@@ -169,21 +238,24 @@ if _TORCH_OK:
         def reset(self):
             pass
 
-        def reason(self, obs_history: List, instruction: str) -> Tuple[np.ndarray, int]:
+        def reason(self, obs_history: List, instruction: str) -> Tuple[np.ndarray, int, np.ndarray]:
             img, bev, proprio, tokens = _history_to_tensors(
                 obs_history, instruction, self._device(), self.history_len
             )
+            img, bev = self._apply_modality_mask(img, bev)
             with torch.no_grad():
                 latent, skill_logits, _ = self.encode(img, bev, proprio, tokens)
                 skill = int(skill_logits.argmax(dim=-1).item())
-            return latent.cpu().numpy()[0], skill
+                skill_vec = self._skill_vec(skill_logits)
+            return latent.cpu().numpy()[0], skill, skill_vec.cpu().numpy()[0]
 
-        def act(self, obs, latent_np: np.ndarray) -> np.ndarray:
+        def act(self, obs, latent_np: np.ndarray, skill_vec_np: np.ndarray) -> np.ndarray:
             _, _, proprio, _ = _obs_to_tensors(obs, "", self._device())
             with torch.no_grad():
                 latent = torch.as_tensor(latent_np, device=self._device()).unsqueeze(0)
-                cond = torch.cat([latent, self.proprio_enc(proprio)], dim=-1)
-                a = self.action_head.sample(cond, steps=4)
+                skill_vec = torch.as_tensor(skill_vec_np, device=self._device()).unsqueeze(0)
+                cond = torch.cat([latent, self.proprio_enc(proprio), skill_vec], dim=-1)
+                a = self.denormalize_action(self.action_head.sample(cond, steps=4))
             return a.cpu().numpy()[0]
 
         # -- loading ------------------------------------------------------- #

@@ -20,7 +20,7 @@ import numpy as np
 from ..common.config import HierarchyConfig, RobotConfig
 from ..policy.runner import GardenerController
 from ..policy.vla_brain import ACTION_KEYS, ScriptedGardenerVLA
-from ..policy.vla_net import _hash_tokens  # reuse the exact tokenizer
+from ..policy.vla_net import BEV_HW, BEV_RANGE, _hash_tokens  # reuse the exact tokenizer/raster
 from ..runtime import loop
 from ..sim import make_backend
 
@@ -40,6 +40,20 @@ def _intent_to_action_vec(intent) -> np.ndarray:
                      intent.dispense_rate_lps], dtype=np.float32)
 
 
+def _lidar_to_bev(lidar) -> np.ndarray:
+    """Rasterize a LiDAR scan into the *same* BEV grid the VLA consumes at
+    inference (vla_net._obs_to_tensors), so collected frames match what the
+    deployed net sees."""
+    bev = np.zeros((BEV_HW, BEV_HW), np.float32)
+    p = lidar.points
+    if p.shape[0]:
+        ij = ((p[:, :2] + BEV_RANGE) / (2 * BEV_RANGE) * BEV_HW).astype(int)
+        m = (ij[:, 0] >= 0) & (ij[:, 0] < BEV_HW) & (ij[:, 1] >= 0) & (ij[:, 1] < BEV_HW)
+        for i, j in ij[m]:
+            bev[j, i] = 1.0
+    return bev
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--backend", default="kinematic")
@@ -52,6 +66,7 @@ def main() -> None:
     rc = RobotConfig.from_yaml()
     h = HierarchyConfig.from_yaml()
     proprio, tokens, actions, skills, imgs = [], [], [], [], []
+    depths, bevs = [], []
     instr_per_sample: list[str] = []
     episode_ends: list[int] = []
 
@@ -70,7 +85,15 @@ def main() -> None:
             tokens.append(_hash_tokens(instr))
             actions.append(_intent_to_action_vec(info.intent))
             skills.append(SKILLS.index(info.intent.skill.value))
-            imgs.append(o.camera.rgb.astype(np.uint8) if o.camera is not None else np.zeros((48, 64, 3), np.uint8))
+            if o.camera is not None:
+                imgs.append(o.camera.rgb.astype(np.uint8))
+                depths.append((o.camera.depth if o.camera.depth is not None
+                               else np.zeros(o.camera.rgb.shape[:2], np.float32)).astype(np.float32))
+            else:
+                imgs.append(np.zeros((48, 64, 3), np.uint8))
+                depths.append(np.zeros((48, 64), np.float32))
+            bevs.append(_lidar_to_bev(o.lidar) if o.lidar is not None
+                        else np.zeros((BEV_HW, BEV_HW), np.float32))
             instr_per_sample.append(instr)
         io.close()
         episode_ends.append(len(actions))  # cumulative sample count = episode boundary
@@ -82,7 +105,8 @@ def main() -> None:
         args.out,
         proprio=np.stack(proprio), tokens=np.stack(tokens),
         actions=np.stack(actions), skills=np.array(skills, np.int64),
-        images=np.stack(imgs), action_keys=np.array(ACTION_KEYS),
+        images=np.stack(imgs), depths=np.stack(depths), bev=np.stack(bevs),
+        action_keys=np.array(ACTION_KEYS),
         episode_ends=np.array(episode_ends, np.int64),
         instructions=np.array(instr_per_sample),
     )
