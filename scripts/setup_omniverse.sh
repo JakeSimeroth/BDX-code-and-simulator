@@ -29,9 +29,11 @@ nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader ||
 if [ ! -d "$ISAACLAB_PATH" ]; then
   cat <<EOF
 !! Isaac Lab not found at $ISAACLAB_PATH.
-   Install it (pulls Isaac Sim too):
+   Current path (no legacy Omniverse Launcher needed) — in a Python 3.11 venv:
+     pip install 'isaacsim[all,extscache]' --extra-index-url https://pypi.nvidia.com
      git clone https://github.com/isaac-sim/IsaacLab.git "$ISAACLAB_PATH"
      cd "$ISAACLAB_PATH" && ./isaaclab.sh --install
+   Requirements: Ubuntu 22.04+/Win, Python 3.11, driver 580.65+, 12GB+ VRAM, ~50GB disk.
    Docs: https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/index.html
    Then re-run this script.
 EOF

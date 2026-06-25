@@ -7,34 +7,47 @@ GR00T fine-tuning is the one memory-constrained piece (see the last section).
 
 ---
 
-## 0. First boot (~15 min, minus the Isaac download)
+## 0. First boot
+
+**Prerequisites (RTX 4070 ✓):** Ubuntu 22.04/24.04 (or Windows; Isaac needs GLIBC
+2.35+, so *not* Ubuntu 20.04), **Python 3.11**, NVIDIA driver **580.65+**, ≥32 GB
+RAM, ~50 GB free disk. The 4070's 12 GB VRAM + RT cores meet the Isaac minimum.
+
+The clean, current path is **pip Isaac Sim + Isaac Lab from source** — you do
+*not* need the legacy Omniverse Launcher (it's deprecated). Use one Python 3.11
+virtualenv for everything so Isaac Lab can import this package:
 
 ```bash
+# 1) a Python 3.11 venv (Isaac Sim requires 3.11; the venv must match)
+python3.11 -m venv ~/isaac && source ~/isaac/bin/activate
+pip install --upgrade pip
+
+# 2) Isaac Sim via pip, then Isaac Lab from source
+pip install 'isaacsim[all,extscache]' --extra-index-url https://pypi.nvidia.com
+git clone https://github.com/isaac-sim/IsaacLab.git ~/IsaacLab
+cd ~/IsaacLab && ./isaaclab.sh --install        # installs Isaac Lab + rsl_rl into this venv
+cd -
+
+# 3) this project (into the SAME venv) + a quick check
 git clone <your-fork> && cd BDX-code-and-simulator
 git checkout claude/magical-hamilton-q8uu91
-
-# CUDA PyTorch for your machine (match your driver's CUDA; cu124 is a safe default)
-pip install torch --index-url https://download.pytorch.org/whl/cu124
-
-# the package + the bits you'll use immediately
 pip install -e '.[sim,vla,train,viz]'
-
-# tell me what's live and what to do next
 python scripts/preflight.py
 ```
 
 `preflight.py` prints a checklist (CUDA on?, which GPU, MuJoCo, Isaac, GR00T,
 optional libs), runs a 200-tick gardener smoke test, and builds the NeuralVLA on
 the GPU. Green ✓ = ready; yellow • = optional/missing with the install hint.
+Official install reference: <https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/index.html>.
 
-**Isaac Lab** is a separate, larger install (it pulls Isaac Sim). Do it once:
+Then convert the robot to USD and smoke-train (one command):
 
 ```bash
-git clone https://github.com/isaac-sim/IsaacLab.git ~/IsaacLab
-cd ~/IsaacLab && ./isaaclab.sh --install
-# then, from this repo, one command does the rest:
 ISAACLAB_PATH=~/IsaacLab ./scripts/setup_omniverse.sh   # install + URDF→USD + smoke-train
 ```
+
+> Note: if you're driving this from a cloud Claude Code session, that session has
+> no GPU — run these on the 4070 itself (or run Claude Code locally on the 4070).
 
 ---
 
