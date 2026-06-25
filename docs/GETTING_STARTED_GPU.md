@@ -5,6 +5,15 @@ robot, the greenhouse, and the tests. Written for a single workstation with an
 **RTX 4070 (12 GB)** — plenty for the locomotion RL and the NeuralVLA brain;
 GR00T fine-tuning is the one memory-constrained piece (see the last section).
 
+> **Windows 11 native + driving with Claude Code on the 4070?**
+> (1) The `.sh` scripts don't run natively — use the cross-platform
+> `python -m ...` / `python scripts\*.py` commands below, or
+> `scripts\setup_omniverse.ps1`. Isaac Lab's wrapper is **`isaaclab.bat`**.
+> (2) Do everything inside your **Python 3.11** Isaac venv
+> (`.\<venv>\Scripts\activate`). (3) A fresh Claude Code session opened in this
+> repo auto-reads **`CLAUDE.md`**, so it picks up the project state immediately —
+> just say "read CLAUDE.md and run preflight."
+
 ---
 
 ## 0. First boot
