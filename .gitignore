@@ -1,0 +1,5 @@
+# Secrets + runtime data — never commit these
+.env
+appdata/
+data/
+*.log

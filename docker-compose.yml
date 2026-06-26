@@ -1,0 +1,78 @@
+# BDX Pi 5 Home Media Server — container stack
+# Runs 24/7. Bring up with:  sudo docker compose up -d
+#
+# NOTE ON qBittorrent + Sonarr: these are general-purpose, legal tools shipped
+# with NO indexers, trackers, or content sources configured. This stack does not
+# include or point to any pirated content. You are responsible for only adding
+# legal sources (Linux ISOs, the Internet Archive, public-domain media, content
+# you own, or paid/legal Usenet). Downloading copyrighted material you do not
+# have a licence for is copyright infringement. See README "Legal".
+
+services:
+  jellyfin:
+    image: lscr.io/linuxserver/jellyfin:latest
+    container_name: jellyfin
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ${CONFIG_ROOT}/jellyfin:/config
+      - ${DATA_ROOT}/media:/data/media
+    ports:
+      - "8096:8096"       # web UI
+      - "7359:7359/udp"   # client auto-discovery (optional)
+      - "1900:1900/udp"   # DLNA discovery (optional)
+    restart: unless-stopped
+
+  pihole:
+    image: pihole/pihole:latest
+    container_name: pihole
+    environment:
+      - TZ=${TZ}
+      # Pi-hole v6 admin password:
+      - FTLCONF_webserver_api_password=${PIHOLE_PASSWORD}
+      # (older v5 images use:  WEBPASSWORD=${PIHOLE_PASSWORD} )
+      - FTLCONF_dns_listeningMode=all
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "8081:80/tcp"     # admin -> http://<pi-ip>:8081/admin
+    volumes:
+      - ${CONFIG_ROOT}/pihole/etc-pihole:/etc/pihole
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - WEBUI_PORT=8080
+    volumes:
+      - ${CONFIG_ROOT}/qbittorrent:/config
+      - ${DATA_ROOT}:/data
+    ports:
+      - "8080:8080"       # web UI (temp password: docker logs qbittorrent)
+      - "6881:6881/tcp"   # torrent traffic
+      - "6881:6881/udp"
+    restart: unless-stopped
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ${CONFIG_ROOT}/sonarr:/config
+      - ${DATA_ROOT}:/data       # same root as qBittorrent so file moves are atomic
+    ports:
+      - "8989:8989"
+    depends_on:
+      - qbittorrent
+    restart: unless-stopped
