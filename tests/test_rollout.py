@@ -21,7 +21,9 @@ def test_rollout_runs_and_waters_plants():
     ctrl.reset(io)
     dry0 = io.plant_dryness.copy()
     skills = set()
-    for _ in range(3000):
+    # 3800 ticks (~76 s): the survey plus the expression layer's deliberate
+    # pacing (boot theatrics, greeting/satisfied gestures slow the gait).
+    for _ in range(3800):
         info = ctrl.step(io)
         skills.add(info.intent.skill.value)
     # It must have actually navigated and dispensed (not just idled).

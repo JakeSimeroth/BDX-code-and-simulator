@@ -40,6 +40,18 @@ task reasoning needs a slow, broad one. Decoupling them is what makes the gait
 transferable and the brain swappable — and it's how real humanoid stacks (GR00T,
 Figure, Physical Intelligence) are organized.
 
+## Expression layer — the BDX personality  ·  every tick
+`policy/animation.py`. The VLA's `Intent` carries an `Expression` next to its
+`Skill` — *which* animation to deploy (boot, idle scan, curious lean-in, greet,
+alert-freeze, watering bob, satisfied wiggle, low-power droop, dock settle).
+An `AnimationEngine` renders it as a clamped, smoothed overlay on the
+locomotion style channels (`body_height`, `look_yaw`, `look_pitch`, gait
+energy), so personality rides the same command plumbing in every backend. The
+scripted expert triggers expressions from events; the neural VLA learns the
+mapping via a dedicated expression head. Expressions may slow the robot but
+never speed it up, and a safety override suppresses them. See
+[ANIMATIONS.md](ANIMATIONS.md).
+
 ## Safety Guardian  ·  motor rate
 `safety/guardian.py`. Deterministic, non-learned. It screens every actuator
 command: joint/torque/slew limits, tip-over arrest, human-proximity freeze,
@@ -61,8 +73,9 @@ slot is filled by SLAM; the contract is identical.
 ```
 read() → world belief → state estimate
    ├─ (slow) VLA.act(obs, goal, world) → Intent     [re-planned every N ticks]
-   ├─ (fast) locomotion.act(proprio, Intent.cmd) → Action
-   ├─ Guardian.check(Action, state, world) → safe Action
+   ├─ (every tick) AnimationEngine(Intent.expression) → style overlay on cmd
+   ├─ (fast) locomotion.act(proprio, styled cmd) → Action
+   ├─ Guardian.check(Action, state, world) → safe Action  [override ⇒ suppress overlay]
    └─ write() → set_base_command_hint() → step()
 ```
 

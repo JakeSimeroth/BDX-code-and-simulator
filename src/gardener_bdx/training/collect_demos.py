@@ -18,6 +18,7 @@ import argparse
 import numpy as np
 
 from ..common.config import HierarchyConfig, RobotConfig
+from ..policy.animation import EXPRESSION_ORDER
 from ..policy.runner import GardenerController
 from ..policy.vla_brain import ACTION_KEYS, ScriptedGardenerVLA
 from ..policy.vla_net import BEV_HW, BEV_RANGE, _hash_tokens  # reuse the exact tokenizer/raster
@@ -65,7 +66,7 @@ def main() -> None:
 
     rc = RobotConfig.from_yaml()
     h = HierarchyConfig.from_yaml()
-    proprio, tokens, actions, skills, imgs = [], [], [], [], []
+    proprio, tokens, actions, skills, expressions, imgs = [], [], [], [], [], []
     depths, bevs = [], []
     instr_per_sample: list[str] = []
     episode_ends: list[int] = []
@@ -85,6 +86,7 @@ def main() -> None:
             tokens.append(_hash_tokens(instr))
             actions.append(_intent_to_action_vec(info.intent))
             skills.append(SKILLS.index(info.intent.skill.value))
+            expressions.append(EXPRESSION_ORDER.index(info.intent.expression))
             if o.camera is not None:
                 imgs.append(o.camera.rgb.astype(np.uint8))
                 depths.append((o.camera.depth if o.camera.depth is not None
@@ -105,6 +107,8 @@ def main() -> None:
         args.out,
         proprio=np.stack(proprio), tokens=np.stack(tokens),
         actions=np.stack(actions), skills=np.array(skills, np.int64),
+        expressions=np.array(expressions, np.int64),
+        expression_names=np.array([e.value for e in EXPRESSION_ORDER]),
         images=np.stack(imgs), depths=np.stack(depths), bev=np.stack(bevs),
         action_keys=np.array(ACTION_KEYS),
         episode_ends=np.array(episode_ends, np.int64),

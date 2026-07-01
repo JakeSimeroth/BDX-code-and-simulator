@@ -132,6 +132,7 @@ src/gardener_bdx/
   policy/
     vla_brain.py         ★ the VLA: NeuralVLA (end-to-end) + ScriptedGardenerVLA (expert/teacher)
     vla_net.py           dual-system torch net: VLM reasoning + flow-matching action head
+    animation.py         BDX expression layer: parametric animation clips + engine (docs/ANIMATIONS.md)
     groot_vla.py         GR00T N1 backbone adapter (new-embodiment, action chunking)
     locomotion.py        System 0 RL gait policy (numpy inference + CPG fallback)
     runner.py            the multi-rate control graph
@@ -155,6 +156,7 @@ docs/                    ARCHITECTURE · SIMULATION · SIM2REAL · SAFETY · HAR
 - [`docs/GROOT.md`](docs/GROOT.md) — GR00T N1 fine-tuning (LeRobot export) + deploy.
 - [`docs/SIM2REAL.md`](docs/SIM2REAL.md) — domain randomization and the transfer plan.
 - [`docs/SAFETY.md`](docs/SAFETY.md) — the Guardian and Halos alignment.
+- [`docs/ANIMATIONS.md`](docs/ANIMATIONS.md) — the BDX expression layer: the animation library and how the VLA deploys it.
 - [`docs/HARDWARE.md`](docs/HARDWARE.md) — BOM, sensors, actuators, the Jetson bring-up.
 
 ## Grounding / prior art

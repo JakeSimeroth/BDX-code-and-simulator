@@ -36,7 +36,10 @@ except Exception as _e:  # pragma: no cover - exercised only without torch
     _IMPORT_ERR = _e
 
 
+from ..common.types import Expression
+
 VOCAB = 4096        # hashed-token vocabulary for the lightweight text encoder
+N_EXPRESSIONS = len(Expression)  # size of the expression (animation) head
 RGB_HW = 96         # square resolution images are resized to
 BEV_HW = 64         # LiDAR bird's-eye-view raster size
 BEV_RANGE = 6.0     # metres mapped across the BEV grid
@@ -164,6 +167,7 @@ if _TORCH_OK:
             self.temporal = nn.TransformerEncoder(layer, num_layers=2)
             self.skill_head = nn.Linear(LATENT_DIM, 6)  # len(Skill)
             self.skill_emb = nn.Embedding(6, SKILL_EMB)  # feeds the chosen skill to System 1
+            self.expression_head = nn.Linear(LATENT_DIM, N_EXPRESSIONS)  # which animation to deploy
 
             # System 1: flow head conditioned on [latent, current proprio, skill].
             self.action_head = _FlowActionHead(action_dim, cond_dim=LATENT_DIM + EMB + SKILL_EMB)
@@ -190,6 +194,10 @@ if _TORCH_OK:
             seq = torch.cat([text, per_step], dim=1) + self.pos[:, : T + 1]
             latent = self.temporal(seq)[:, -1]                    # last position summarizes history+goal
             return latent, self.skill_head(latent), pro[:, -1]
+
+        def expression_logits(self, latent):
+            """Which animation to deploy, from the same reasoning latent."""
+            return self.expression_head(latent)
 
         # -- System-1 conditioning, action scaling, modality gating --------- #
         def _skill_vec(self, skill_logits):
@@ -238,7 +246,7 @@ if _TORCH_OK:
         def reset(self):
             pass
 
-        def reason(self, obs_history: List, instruction: str) -> Tuple[np.ndarray, int, np.ndarray]:
+        def reason(self, obs_history: List, instruction: str) -> Tuple[np.ndarray, int, np.ndarray, int]:
             img, bev, proprio, tokens = _history_to_tensors(
                 obs_history, instruction, self._device(), self.history_len
             )
@@ -247,7 +255,8 @@ if _TORCH_OK:
                 latent, skill_logits, _ = self.encode(img, bev, proprio, tokens)
                 skill = int(skill_logits.argmax(dim=-1).item())
                 skill_vec = self._skill_vec(skill_logits)
-            return latent.cpu().numpy()[0], skill, skill_vec.cpu().numpy()[0]
+                expr = int(self.expression_logits(latent).argmax(dim=-1).item())
+            return latent.cpu().numpy()[0], skill, skill_vec.cpu().numpy()[0], expr
 
         def act(self, obs, latent_np: np.ndarray, skill_vec_np: np.ndarray) -> np.ndarray:
             _, _, proprio, _ = _obs_to_tensors(obs, "", self._device())

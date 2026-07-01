@@ -15,9 +15,16 @@ Guardian. Everything talks to one hardware-abstraction seam (`RobotIO`) so the
 Architecture (four tiers, decoupled clocks) — details in `docs/ARCHITECTURE.md`:
 - **System 2/1 VLA** (`src/gardener_bdx/policy/vla_brain.py`, `vla_net.py`,
   `groot_vla.py`): GR00T-style reasoning (temporal transformer over a 4-frame
-  history + residual vision encoder) + a flow-matching action head. Two impls
-  behind one `VLAPolicy`: `NeuralVLA` (ours, torch) and `ScriptedGardenerVLA`
-  (the runs-anywhere expert/teacher). GR00T N1 adapter is `GR00TVLA`.
+  history, residual vision encoder, learned modality fusion) + a
+  skill-conditioned flow-matching action head (actions standardized; stats ride
+  in the checkpoint). Two impls behind one `VLAPolicy`: `NeuralVLA` (ours,
+  torch) and `ScriptedGardenerVLA` (the runs-anywhere expert/teacher). GR00T N1
+  adapter is `GR00TVLA`.
+- **Expression layer** (`policy/animation.py`): `Intent.expression` selects a
+  BDX animation (boot/idle/curious/greet/alert/watering/satisfied/low-power/
+  dock); the `AnimationEngine` renders it as a clamped overlay on the gait's
+  style channels, safety-suppressed on override. The neural VLA learns
+  selection via an expression head. See `docs/ANIMATIONS.md`.
 - **System 0 locomotion** (`policy/locomotion.py`): RL gait policy, numpy
   inference (train in torch → export `.npz` → run torch-free), CPG fallback.
 - **Safety Guardian** (`safety/guardian.py`): deterministic limits, tip-over,
@@ -30,8 +37,10 @@ interactive GUI + eval), `hardware/jetson_backend.py` (real robot, driver seams)
 
 ## Current state (read before acting)
 
-- **Implemented + tested**: 29 passing tests (`pytest`). Kinematic twin runs the
-  full gardener loop; MuJoCo backend + MJCF/URDF verified to load and step.
+- **Implemented + tested**: 45 passing tests (`pytest`). Kinematic twin runs the
+  full gardener loop **with the expression layer live** (boot/greet/watering
+  animations play in every backend); MuJoCo backend + MJCF/URDF verified to
+  load and step.
 - **NOT yet trained**: there is no trained gait or VLA checkpoint yet. Without a
   trained policy the robot uses the CPG fallback and **falls in physics** (the
   Guardian e-stops — expected). Training is the immediate GPU work.
@@ -78,5 +87,5 @@ The runbook is `docs/GETTING_STARTED_GPU.md`; the interactive-Isaac guide is
 
 ## Docs index
 `README.md` · `docs/GETTING_STARTED_GPU.md` (start here on GPU) · `ISAACSIM.md` ·
-`ISAACLAB.md` · `GROOT.md` · `ARCHITECTURE.md` · `SIMULATION.md` · `SIM2REAL.md` ·
-`SAFETY.md` · `HARDWARE.md`.
+`ISAACLAB.md` · `GROOT.md` · `ARCHITECTURE.md` · `ANIMATIONS.md` · `SIMULATION.md` ·
+`SIM2REAL.md` · `SAFETY.md` · `HARDWARE.md`.

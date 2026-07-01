@@ -31,6 +31,8 @@ def main() -> None:
     ap.add_argument("--out", default="models/policies/vla_bc.pt")
     ap.add_argument("--skill-weight", type=float, default=0.5,
                     help="weight on the System-2 skill cross-entropy vs. the flow loss")
+    ap.add_argument("--expr-weight", type=float, default=0.25,
+                    help="weight on the expression (animation-selection) cross-entropy")
     args = ap.parse_args()
 
     try:
@@ -64,6 +66,11 @@ def main() -> None:
     tokens = torch.tensor(d["tokens"], dtype=torch.long)
     actions = torch.tensor(a_np, dtype=torch.float32)
     skills = torch.tensor(d["skills"], dtype=torch.long)
+    # Expression supervision (older datasets predate the channel -> all NONE).
+    exprs = torch.tensor(
+        d["expressions"] if "expressions" in d.files else np.zeros(N, np.int64),
+        dtype=torch.long,
+    )
     images = torch.tensor(d["images"], dtype=torch.float32).permute(0, 3, 1, 2) / 255.0  # (N,3,48,64)
     depth = (torch.tensor(d["depths"], dtype=torch.float32).unsqueeze(1) / 5.0
              if has_depth else torch.zeros(N, 1, images.shape[2], images.shape[3]))
@@ -102,9 +109,12 @@ def main() -> None:
         tok = tokens[idx].to(dev)                           # (B,L) — const within an episode
         act = net.normalize_action(actions[idx].to(dev))    # learn in standardized space
         sk = skills[idx].to(dev)
+        ex = exprs[idx].to(dev)
         latent, skill_logits, proprio_embed = net.encode(img, bev, pr, tok)
         cond = net.action_cond(latent, proprio_embed, skill_logits)
-        return net.flow_matching_loss(cond, act) + args.skill_weight * F.cross_entropy(skill_logits, sk)
+        return (net.flow_matching_loss(cond, act)
+                + args.skill_weight * F.cross_entropy(skill_logits, sk)
+                + args.expr_weight * F.cross_entropy(net.expression_logits(latent), ex))
 
     for epoch in range(args.epochs):
         net.train()

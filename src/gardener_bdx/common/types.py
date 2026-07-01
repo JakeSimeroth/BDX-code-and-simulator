@@ -154,6 +154,29 @@ class Skill(Enum):
     RECOVER = "recover"  # get-up / stabilize after a disturbance
 
 
+class Expression(Enum):
+    """Expressive animations the VLA can deploy — the BDX personality channel.
+
+    Orthogonal to :class:`Skill` (what the robot is *doing*): an expression is
+    *how it carries itself* while doing it. The VLA selects one per intent; the
+    :class:`~gardener_bdx.policy.animation.AnimationEngine` renders it as a
+    bounded style overlay (body height, head look, gait energy) that the
+    locomotion substrate realizes and the Guardian still screens. Expressions
+    may slow or embellish motion but can never speed it up or bypass safety."""
+
+    NONE = "none"                  # clean gait, no overlay
+    BOOT = "boot"                  # startup: rise from crouch, look around, nod
+    IDLE_BREATHE = "idle_breathe"  # subtle standing sway/breath
+    IDLE_SCAN = "idle_scan"        # slow curious look-around while idle
+    CURIOUS = "curious"            # lean-in head tilt when examining a plant
+    GREET = "greet"                # perk-up + double nod when a person appears
+    ALERT = "alert"                # person very close: stand tall, freeze gait
+    WATERING = "watering"          # contented bob + nozzle sway while dispensing
+    SATISFIED = "satisfied"        # quick happy wiggle after finishing a plant
+    LOW_POWER = "low_power"        # head/body droop, slowed gait on low battery
+    DOCK_SETTLE = "dock_settle"    # settling crouch onto the charger
+
+
 @dataclass
 class LocomotionCommand:
     """Velocity-space command consumed by the locomotion substrate (System 0).
@@ -181,6 +204,7 @@ class Intent:
     target_pose: Optional[Pose] = None  # world-frame goal if known
     confidence: float = 1.0
     rationale: str = ""  # human-readable explanation (great for debugging VLAs)
+    expression: Expression = Expression.NONE  # animation the VLA deploys this intent
 
 
 @dataclass

@@ -35,6 +35,7 @@ from ..common.types import (
 from ..interfaces.robot_io import RobotIO
 from ..perception.world_model import GreenhouseMapper, WorldBelief
 from ..safety.guardian import SafetyGuardian
+from .animation import AnimationEngine, ExpressionOverlay
 from .locomotion import LocomotionPolicy
 from .task import TaskGoal
 from .vla_brain import VLAPolicy, build_vla
@@ -50,6 +51,7 @@ class StepInfo:
     intent: Intent
     verdict: SafetyVerdict
     world: WorldBelief
+    overlay: Optional[ExpressionOverlay] = None  # the animation actually rendered
 
 
 class GardenerController:
@@ -74,6 +76,7 @@ class GardenerController:
         self.locomotion = locomotion or LocomotionPolicy(
             robot_config, policy_path=self.h.locomotion_policy_path
         )
+        self.animation = AnimationEngine()  # renders the VLA's expression channel
 
         self._brain_decim = max(1, round(self.h.locomotion_hz / max(self.h.vla_hz, 1e-6)))
         self.reset_state()
@@ -85,6 +88,7 @@ class GardenerController:
         self.vla.reset()
         self.locomotion.reset()
         self.guardian.reset()
+        self.animation.reset()
 
     def reset(self, io: RobotIO) -> Observation:
         obs = io.reset()
@@ -104,15 +108,25 @@ class GardenerController:
         # System 2/1 — re-plan on the slow clock; reuse the intent in between.
         if self._tick % self._brain_decim == 0:
             self._intent = self.vla.act(obs, self.goal, world)
+            self.animation.request(self._intent.expression)
+
+        # Expression layer — render the deployed animation as a bounded style
+        # overlay and blend it into the command (body language, never balance).
+        overlay = self.animation.update(self.dt)
+        styled = self._apply_overlay(self._intent.locomotion, overlay)
 
         # System 0 — realize the velocity command as a gait, every tick.
-        action = self.locomotion.act(obs, self._intent.locomotion, self.dt)
+        action = self.locomotion.act(obs, styled, self.dt)
         action.water_valve_lps = (
             self._intent.dispense_rate_lps if self._intent.skill == Skill.DISPENSE_WATER else 0.0
         )
 
         # Safety — screen the final actuator command.
         verdict = self.guardian.check(action, state, world, obs)
+        if verdict.level.value >= SafetyLevel.OVERRIDE.value:
+            self.animation.suppress()  # theatrics end where safety begins
+        else:
+            self.animation.release()
 
         io.write(verdict.action)
         # Reduced-order twins move the base from the commanded twist; make sure a
@@ -120,12 +134,25 @@ class GardenerController:
         effective_cmd = (
             LocomotionCommand()
             if verdict.level.value >= SafetyLevel.OVERRIDE.value
-            else self._intent.locomotion
+            else styled
         )
         io.set_base_command_hint(effective_cmd)
         io.step()
         self._tick += 1
-        return StepInfo(obs.stamp, obs, state, self._intent, verdict, world)
+        return StepInfo(obs.stamp, obs, state, self._intent, verdict, world, overlay)
+
+    @staticmethod
+    def _apply_overlay(cmd: LocomotionCommand, ov) -> LocomotionCommand:
+        """Blend the animation overlay into the VLA's command. Additive on the
+        style channels, multiplicative (and only ever <= 1) on gait energy."""
+        return LocomotionCommand(
+            vx=cmd.vx * ov.speed_scale,
+            vy=cmd.vy * ov.speed_scale,
+            wz=cmd.wz * ov.speed_scale,
+            body_height=cmd.body_height + ov.body_height,
+            look_yaw=cmd.look_yaw + ov.look_yaw,
+            look_pitch=cmd.look_pitch + ov.look_pitch,
+        )
 
     # -- state estimation ------------------------------------------------- #
     def _estimate_state(self, obs: Observation, world: WorldBelief) -> RobotState:

@@ -32,7 +32,7 @@ from typing import Optional
 import numpy as np
 
 from ..common.math_utils import wrap_to_pi, yaw_of
-from ..common.types import Intent, LocomotionCommand, Observation, Pose, Skill
+from ..common.types import Expression, Intent, LocomotionCommand, Observation, Pose, Skill
 from ..perception.world_model import Plant, WorldBelief
 from .task import TaskGoal, TaskKind
 
@@ -94,6 +94,11 @@ class ScriptedGardenerVLA(VLAPolicy):
         self._patrol_idx = 0
         self._laps = 0
         self.well_watered = 0.30  # water a plant down to this, then move on
+        # Expression/event state (clocks are obs.stamp seconds).
+        self._t0: Optional[float] = None          # first-tick stamp -> boot window
+        self._greet_ok_at = -np.inf               # cooldown so we greet once per encounter
+        self._human_was_near = False              # edge-detect a person entering range
+        self._satisfied_until = -np.inf           # plays the job-done wiggle
         # A perimeter sweep that, with the LiDAR/camera range, reveals the whole
         # greenhouse — used both for PATROL and as the TEND search pattern.
         self._patrol_waypoints = np.array(
@@ -102,6 +107,11 @@ class ScriptedGardenerVLA(VLAPolicy):
 
     # -- main ------------------------------------------------------------- #
     def act(self, obs, goal: TaskGoal, world: Optional[WorldBelief] = None) -> Intent:
+        intent = self._decide(obs, goal, world)
+        intent.expression = self._pick_expression(obs, goal, world, intent)
+        return intent
+
+    def _decide(self, obs, goal: TaskGoal, world: Optional[WorldBelief]) -> Intent:
         if world is None:
             # Without a belief the scripted policy is blind; hold still safely.
             return self._idle("no world belief available")
@@ -134,6 +144,48 @@ class ScriptedGardenerVLA(VLAPolicy):
             return self._search(world)
         return self._tend(world, obs, goal, target)
 
+    # -- expression selection (the teacher's body language) ----------------- #
+    def _pick_expression(self, obs, goal, world, intent: Intent) -> Expression:
+        """Deploy an animation from what is happening right now. This is the
+        supervision the neural VLA distills — personality becomes policy."""
+        t = obs.stamp
+        if self._t0 is None:
+            self._t0 = t
+        if t - self._t0 < 2.8:                       # power-on theatrics
+            return Expression.BOOT
+
+        dh = world.distance_to_nearest_human() if world is not None else np.inf
+        if dh < self.human_stop_radius:              # someone is *right there*
+            return Expression.ALERT
+        near = dh < self.human_slow_radius
+        if near and not self._human_was_near and t >= self._greet_ok_at:
+            self._greet_ok_at = t + 12.0             # one hello per encounter
+            self._human_was_near = True
+            return Expression.GREET
+        self._human_was_near = near
+
+        if t < self._satisfied_until:                # job-done wiggle in progress
+            return Expression.SATISFIED
+
+        low_soc = obs.battery.state_of_charge <= goal.return_to_dock_soc + 0.05
+
+        if intent.skill == Skill.DISPENSE_WATER:
+            return Expression.WATERING
+        if intent.skill == Skill.APPROACH_PLANT:
+            return Expression.CURIOUS
+        if intent.skill == Skill.DOCK_CHARGE:
+            if world is not None and world.dock_pose is not None:
+                rng = float(np.linalg.norm(world.dock_pose.position[:2] - world.robot_xy()))
+                if rng < 0.9:
+                    return Expression.DOCK_SETTLE
+            return Expression.LOW_POWER if low_soc else Expression.NONE
+        if low_soc:
+            return Expression.LOW_POWER
+        if intent.skill == Skill.IDLE:
+            # Alternate breathing with a curious look-around, on a lazy cycle.
+            return Expression.IDLE_SCAN if ((t - self._t0) % 12.0) < 5.0 else Expression.IDLE_BREATHE
+        return Expression.NONE
+
     # -- behaviors -------------------------------------------------------- #
     def _tend(self, world, obs, goal, plant: Plant) -> Intent:
         rxy = world.robot_xy()
@@ -163,8 +215,9 @@ class ScriptedGardenerVLA(VLAPolicy):
             return Intent(Skill.DISPENSE_WATER, cmd, dispense_rate_lps=self.dispense_rate_lps,
                           target_pose=_xy_pose(plant.position),
                           rationale=f"watering plant#{plant.id} (dryness {plant.dryness:.2f})")
-        # Done with this one.
+        # Done with this one — celebrate briefly (the wiggle plays via expression).
         self._committed_id = None
+        self._satisfied_until = obs.stamp + 1.6
         return Intent(Skill.APPROACH_PLANT, cmd, target_pose=_xy_pose(plant.position),
                       rationale=f"plant#{plant.id} satisfied")
 
@@ -316,6 +369,7 @@ class NeuralVLA(VLAPolicy):
         self._latent = None  # cached System-2 reasoning latent
         self._skill_vec = None  # cached System-2 skill embedding for System 1
         self._skill = Skill.IDLE
+        self._expression = Expression.NONE  # learned animation selection
         self._history: list = []  # rolling window of recent observations
         self.net.reset()
 
@@ -328,8 +382,11 @@ class NeuralVLA(VLAPolicy):
         refresh_system2 = (self._tick % self.system2_period) == 0
         # System 2: slow reasoning over a *history* of vision+proprio + language.
         if refresh_system2 or self._latent is None:
-            self._latent, skill_id, self._skill_vec = self.net.reason(self._history, goal.instruction)
+            self._latent, skill_id, self._skill_vec, expr_id = self.net.reason(
+                self._history, goal.instruction
+            )
             self._skill = list(Skill)[int(skill_id) % len(Skill)]
+            self._expression = list(Expression)[int(expr_id) % len(Expression)]
         # System 1: fast flow-matching action head conditioned on latent + skill.
         a = self.net.act(obs, self._latent, self._skill_vec)  # np.ndarray (ACTION_DIM,)
         self._tick += 1
@@ -349,7 +406,8 @@ class NeuralVLA(VLAPolicy):
             dispense_rate_lps=max(0.0, float(a[6])),
             target_pose=target,
             confidence=1.0,
-            rationale=f"neural VLA [{self._skill.value}]",
+            rationale=f"neural VLA [{self._skill.value} | {self._expression.value}]",
+            expression=self._expression,
         )
 
 
