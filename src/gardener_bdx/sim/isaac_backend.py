@@ -11,7 +11,12 @@ Two ways it's used (same code, same RobotIO contract):
 It builds the full gardener task: a greenhouse (your ``greenhouse.usd`` if
 present, else procedural benches+dock+human), plant soil-moisture, water/battery
 budgets, and a ground-truth ``semantics()`` channel so the VLA loop closes before
-perception is trained. RTX camera / RTX-LiDAR are wired as marked seams.
+perception is trained. An RTX **RGB-D camera + RTX-LiDAR are attached to the
+head** by default (``rtx_sensors=True``): the head is the BDX sensor gimbal, so
+``look_yaw``/``look_pitch`` — including the expression layer's glances — aim
+them. Sensor attachment is best-effort: any API mismatch on your Isaac version
+degrades gracefully to the privileged ``semantics()`` channel with a printed
+hint, and the task still closes.
 
 GPU-only and never imported unless constructed. Isaac's Python API is
 version-sensitive (the ``omni.isaac.core`` namespace became ``isaacsim.core`` in
@@ -54,12 +59,14 @@ class IsaacGreenhouse(RobotIO):
         headless: bool = True,
         device: str = "cuda",
         seed: int = 0,
+        rtx_sensors: bool = True,
         **scene_overrides,
     ):
         super().__init__(robot_config, control_dt)
         self.rc = robot_config
         self.device = device
         self._render = not headless          # render every step when the GUI is up
+        self._rtx_sensors = rtx_sensors
         self.rng = np.random.default_rng(seed)
 
         scene = {**_scene_defaults(), **scene_overrides}
@@ -127,11 +134,59 @@ class IsaacGreenhouse(RobotIO):
         dof_names = list(self._robot.dof_names)
         self._dof_index = np.array([dof_names.index(n) for n in self.rc.joint_names])
         self._props: dict = {}
-        # Seams: attach an RTX camera + RTX-LiDAR on /World/Robot/head_link and a
-        # foot contact sensor; cache handles here. Until then camera/lidar are None
-        # and the privileged semantics() channel feeds perception.
+        # Photoreal senses on the head (the BDX sensor gimbal). Best-effort:
+        # None on failure, and the privileged semantics() channel keeps feeding
+        # perception either way.
         self._camera = None
         self._lidar = None
+        if self._rtx_sensors:
+            self._attach_sensors()
+
+    _HEAD_PRIM = "/World/Robot/head_link"     # matches the URDF head link
+    _CAMERA_RES = (128, 96)                   # (W, H); the VLA resizes to 96x96 anyway
+
+    def _attach_sensors(self) -> None:
+        """Attach the RGB-D camera and RTX-LiDAR to the head.
+
+        GPU-only template finished against Isaac Sim 4.5+ (``isaacsim.sensors``)
+        with the legacy ``omni.isaac.sensor`` fallback; sensor APIs drift across
+        versions, so each attachment is individually non-fatal — a mismatch
+        prints the fix location and the twin runs on ``semantics()`` meanwhile."""
+        try:
+            try:  # Isaac Sim >= 4.5
+                from isaacsim.sensors.camera import Camera
+            except Exception:  # pragma: no cover - older Isaac Sim
+                from omni.isaac.sensor import Camera
+
+            cam = Camera(
+                prim_path=f"{self._HEAD_PRIM}/rgbd_camera",
+                translation=np.array([0.06, 0.0, 0.03]),  # just ahead of the face
+                resolution=self._CAMERA_RES,
+            )
+            cam.initialize()
+            cam.add_distance_to_image_plane_to_frame()    # depth channel
+            self._camera = cam
+        except Exception as e:  # pragma: no cover - depends on installed Isaac
+            print(f"[isaac] head camera not attached ({type(e).__name__}: {e}) — "
+                  "finish the seam in IsaacGreenhouse._attach_sensors (docs/ISAACSIM.md).")
+
+        try:
+            try:  # Isaac Sim >= 4.5
+                from isaacsim.sensors.rtx import LidarRtx
+            except Exception:  # pragma: no cover - older Isaac Sim
+                from omni.isaac.sensor import LidarRtx
+
+            lidar = LidarRtx(
+                prim_path=f"{self._HEAD_PRIM}/lidar",
+                translation=np.array([0.0, 0.0, 0.08]),   # crown of the head
+            )
+            lidar.initialize()
+            if hasattr(lidar, "add_point_cloud_data_to_frame"):
+                lidar.add_point_cloud_data_to_frame()
+            self._lidar = lidar
+        except Exception as e:  # pragma: no cover - depends on installed Isaac
+            print(f"[isaac] RTX-LiDAR not attached ({type(e).__name__}: {e}) — "
+                  "finish the seam in IsaacGreenhouse._attach_sensors (docs/ISAACSIM.md).")
 
     # -- task state ------------------------------------------------------- #
     def _init_task_state(self) -> None:
@@ -294,18 +349,42 @@ class IsaacGreenhouse(RobotIO):
         return best
 
     def _read_camera(self):
+        """Real RGB-D from the head camera; None while the renderer warms up
+        (first few frames return empty buffers) or if the seam isn't active."""
         if self._camera is None:
             return None
-        rgb = self._camera.get_rgba()[..., :3]
-        return CameraFrame(rgb=np.asarray(rgb, np.uint8),
-                           depth=np.asarray(self._camera.get_depth(), np.float32),
-                           frame="head_camera", stamp=self.now())
+        try:
+            rgba = np.asarray(self._camera.get_rgba())
+            if rgba.size == 0:
+                return None
+            depth = None
+            if hasattr(self._camera, "get_depth"):
+                d = np.asarray(self._camera.get_depth(), np.float32)
+                depth = d if d.size else None
+            return CameraFrame(rgb=rgba[..., :3].astype(np.uint8), depth=depth,
+                               frame="head_camera", stamp=self.now())
+        except Exception:  # pragma: no cover - renderer/version quirk
+            return None
 
     def _read_lidar(self):
+        """RTX-LiDAR points in the sensor frame (what the VLA's BEV rasterizer
+        expects). Accessors vary across Isaac versions — try each known one."""
         if self._lidar is None:
             return None
-        return LidarScan(points=np.asarray(self._lidar.get_point_cloud_data()).reshape(-1, 3),
-                         frame="lidar", stamp=self.now())
+        try:
+            pts = None
+            if hasattr(self._lidar, "get_point_cloud_data"):
+                pts = self._lidar.get_point_cloud_data()
+            if pts is None and hasattr(self._lidar, "get_current_frame"):
+                pts = (self._lidar.get_current_frame() or {}).get("point_cloud")
+            if pts is None:
+                return None
+            pts = np.asarray(pts, np.float32).reshape(-1, 3)
+            if pts.shape[0] == 0:
+                return None
+            return LidarScan(points=pts, frame="lidar", stamp=self.now())
+        except Exception:  # pragma: no cover - renderer/version quirk
+            return None
 
     def close(self) -> None:
         app = getattr(self, "_app", None)

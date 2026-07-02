@@ -47,12 +47,20 @@ straight into perception → the VLA → the safety Guardian:
 
 ## Photoreal vision (RTX camera + LiDAR)
 
-To feed the VLA real pixels (not the privileged `semantics()` channel), attach an
-RTX camera and RTX-LiDAR to the head and wire their handles in
-`sim/isaac_backend.py` where marked (`self._camera`, `self._lidar`,
-`_read_camera`, `_read_lidar`). Once attached, `Observation.camera/lidar` carry
-real renders and you can train/evaluate perception in the loop. Until then the
-backend runs on ground-truth detections so the task still closes.
+An RGB-D camera and an RTX-LiDAR are **attached to `head_link` by default**
+(`IsaacGreenhouse._attach_sensors`) — the head is the BDX sensor gimbal, so
+`look_yaw`/`look_pitch` (including the expression layer's glances) literally aim
+them. When active, `Observation.camera/lidar` carry real renders: the VLA runs
+on true pixels, and `collect_demos --backend isaac` records RGB + depth + a
+LiDAR-BEV that `train_vla` consumes directly.
+
+Attachment is **best-effort and version-sensitive** (written for Isaac Sim 4.5+
+`isaacsim.sensors.*`, falling back to `omni.isaac.sensor`). On your first run
+watch the console: a `[isaac] ... not attached` line means your build's sensor
+API differs — finish the seam in `_attach_sensors`/`_read_camera`/`_read_lidar`
+(the accessors to check are noted inline). Until then the twin runs on the
+privileged `semantics()` channel, so the task still closes either way. To skip
+sensors entirely: `python scripts/run_isaac.py --no-rtx-sensors`.
 
 ## Authoring a real greenhouse
 

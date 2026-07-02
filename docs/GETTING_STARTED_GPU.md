@@ -175,11 +175,12 @@ train against, but tune to your CAD before serious Sim2Real:
   position, dry-out rate, human speed). Edit that YAML to change the layout/task
   difficulty; edit the backends to change geometry.
 - *Isaac (photoreal)*: author `models/scenes/greenhouse.usd` — real benches, pots,
-  foliage, lighting — and reference it in `sim/isaac_backend.py`. Add an RTX
-  camera + RTX-LiDAR prim on the robot's head and wire their handles where marked
-  (`_read_camera`/`_read_lidar`). For perception training, tag plants/people with
-  semantic labels (Replicator) so the privileged `semantics()` channel and the
-  real `PlantDetector` produce the same `Detection`s.
+  foliage, lighting — and it's referenced automatically. An RTX camera +
+  RTX-LiDAR attach to the head by default (`_attach_sensors`; check the console
+  on first run — see docs/ISAACSIM.md). For perception training, tag
+  plants/people with semantic labels (Replicator) so the privileged
+  `semantics()` channel and the real `PlantDetector` produce the same
+  `Detection`s.
 
 **Where "dryness" comes from.** It's a per-plant soil-moisture state the sim
 evolves (waters down on dispense, dries over time). On hardware it's regressed

@@ -33,6 +33,8 @@ def main() -> None:
     ap.add_argument("--robot", default="models/robot/gardener_bdx.usd")
     ap.add_argument("--scene", default="models/scenes/greenhouse.usd")
     ap.add_argument("--headless", action="store_true", help="run without the GUI window")
+    ap.add_argument("--no-rtx-sensors", action="store_true",
+                    help="skip the head RGB-D/LiDAR attachment (privileged semantics only)")
     args, _ = ap.parse_known_args()
 
     # numpy-only imports — safe before Isaac's SimulationApp boots.
@@ -49,7 +51,8 @@ def main() -> None:
     # Constructing the backend boots Isaac Sim (must happen before the heavy
     # brain imports), so build it first, then the controller.
     io = IsaacGreenhouse(rc, dt, usd_robot=args.robot, usd_scene=args.scene,
-                         headless=args.headless, device=h.device)
+                         headless=args.headless, device=h.device,
+                         rtx_sensors=not args.no_rtx_sensors)
     kwargs = {} if args.vla == "scripted" else {"checkpoint": args.vla_ckpt, "device": h.device}
     loco = LocomotionPolicy(rc, policy_path=args.policy or h.locomotion_policy_path)
     ctrl = GardenerController(rc, h, goal=args.goal, vla=build_vla(args.vla, **kwargs), locomotion=loco)

@@ -48,8 +48,10 @@ interactive GUI + eval), `hardware/jetson_backend.py` (real robot, driver seams)
   `training/isaaclab_locomotion_env.py` are written against the Isaac Lab 2.x /
   Isaac Sim API but were **never executed** (prior dev box had no GPU). Expect to
   fix small version mismatches (esp. `omni.isaac.core` vs `isaacsim.core`
-  namespaces) on first run. RTX camera/LiDAR are marked seams (`_read_camera`/
-  `_read_lidar`), so the Isaac twin currently runs on ground-truth `semantics()`.
+  namespaces) on first run. An RTX RGB-D camera + RTX-LiDAR are attached to
+  `head_link` by default (`_attach_sensors`, best-effort with graceful fallback
+  to ground-truth `semantics()`); watch the console for `[isaac] ... not
+  attached` and finish the seam against the installed sensor API if it prints.
 - Branch: `claude/magical-hamilton-q8uu91`. The single source of truth for the
   robot is `configs/robot/gardener_bdx.yaml` (joint names/order, limits, gains).
 
