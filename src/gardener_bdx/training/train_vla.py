@@ -20,10 +20,48 @@ import argparse
 
 import numpy as np
 
+_OPTIONAL_KEYS = ("depths", "bev", "expressions")
+
+
+def _load_datasets(spec: str) -> dict:
+    """Load one or more demo ``.npz`` files (comma-separated) into one dict —
+    e.g. BC + DAgger rounds: ``--data data/expert_demos.npz,data/dagger_demos.npz``.
+    Episode boundaries are re-offset; optional channels missing from a file are
+    zero-filled so mixed-generation datasets still train."""
+    paths = [p.strip() for p in spec.split(",") if p.strip()]
+    parts = [dict(np.load(p, allow_pickle=True)) for p in paths]
+    if len(parts) == 1:
+        return parts[0]
+
+    hw = parts[0]["images"].shape[1:3]
+    for p, part in zip(paths, parts):
+        assert part["images"].shape[1:3] == hw, f"{p}: image size {part['images'].shape[1:3]} != {hw}"
+
+    out: dict = {}
+    for key in ("proprio", "tokens", "actions", "skills", "images", "instructions"):
+        out[key] = np.concatenate([p[key] for p in parts])
+    for key in _OPTIONAL_KEYS:
+        if any(key in p for p in parts):
+            n_of = {"depths": lambda p: (len(p["images"]), *hw),
+                    "bev": lambda p: (len(p["images"]), 64, 64),
+                    "expressions": lambda p: (len(p["images"]),)}[key]
+            dtype = np.int64 if key == "expressions" else np.float32
+            out[key] = np.concatenate([
+                np.asarray(p[key]) if key in p else np.zeros(n_of(p), dtype) for p in parts
+            ])
+    ends, off = [], 0
+    for p in parts:
+        ends.extend((np.asarray(p["episode_ends"]) + off).tolist())
+        off += len(p["actions"])
+    out["episode_ends"] = np.array(ends, np.int64)
+    print(f"[data] {len(paths)} datasets merged: {[len(p['actions']) for p in parts]} samples")
+    return out
+
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data", default="data/expert_demos.npz")
+    ap.add_argument("--data", default="data/expert_demos.npz",
+                    help="demo .npz path(s), comma-separated (e.g. BC + DAgger rounds)")
     ap.add_argument("--epochs", type=int, default=20)
     ap.add_argument("--batch", type=int, default=256)
     ap.add_argument("--lr", type=float, default=3e-4)
@@ -44,7 +82,7 @@ def main() -> None:
     from ..policy.vla_brain import ACTION_DIM
     from ..policy.vla_net import RGB_HW, WorldModelVLANet
 
-    d = np.load(args.data, allow_pickle=True)
+    d = _load_datasets(args.data)
     dev = args.device if torch.cuda.is_available() or args.device == "cpu" else "cpu"
     N = d["actions"].shape[0]
 
@@ -56,8 +94,8 @@ def main() -> None:
     # checkpoint so inference feeds the net exactly what it trained on.
     a_np = d["actions"].astype(np.float32)
     net.set_action_stats(a_np.mean(0), a_np.std(0))
-    has_depth = "depths" in d.files and bool(np.any(d["depths"]))
-    has_bev = "bev" in d.files and bool(np.any(d["bev"]))
+    has_depth = "depths" in d and bool(np.any(d["depths"]))
+    has_bev = "bev" in d and bool(np.any(d["bev"]))
     net.set_modalities(has_depth, has_bev)
     print(f"loaded {N} samples from {args.data}; training on {dev} "
           f"(history={T}, depth={has_depth}, bev={has_bev})")
@@ -68,7 +106,7 @@ def main() -> None:
     skills = torch.tensor(d["skills"], dtype=torch.long)
     # Expression supervision (older datasets predate the channel -> all NONE).
     exprs = torch.tensor(
-        d["expressions"] if "expressions" in d.files else np.zeros(N, np.int64),
+        d["expressions"] if "expressions" in d else np.zeros(N, np.int64),
         dtype=torch.long,
     )
     images = torch.tensor(d["images"], dtype=torch.float32).permute(0, 3, 1, 2) / 255.0  # (N,3,48,64)

@@ -94,9 +94,11 @@ def run_episode(backend: str, vla_kind: str, goal: str, steps: int, seed: int,
             now = np.asarray(getattr(io, "plant_dryness"))
             if bool(np.all(now[thirsty_mask] < thr)):
                 completion = t
-    io.close()
 
-    final = np.asarray(getattr(io, "plant_dryness"))
+    # Read final state BEFORE closing: close() tears down the sim app on the
+    # heavier backends (Isaac), taking the task state with it.
+    final = np.asarray(getattr(io, "plant_dryness")).copy()
+    io.close()
     serviced = int(np.sum(final[thirsty_mask] < thr)) if n_thirsty else 0
     # Task success = every thirsty plant watered within the time budget. Collisions
     # and safety interventions are reported as *separate* KPIs (a crude kinematic
@@ -132,6 +134,60 @@ def _print(label: str, a: dict) -> None:
     print(f"  safety intervention   : {a['safety_s']:.1f} s / episode")
 
 
+def _git_sha() -> str:
+    import subprocess
+
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL, text=True
+        ).strip()
+    except Exception:
+        return "unknown"
+
+
+_MD_ROWS = [  # (report row label, aggregate key, format)
+    ("Success rate", "success_rate", "{:.1%}"),
+    ("Plants serviced (avg)", "serviced", "{:.2f}"),
+    ("Thirsty plants (avg)", "thirsty", "{:.2f}"),
+    ("Water delivered (L)", "water_l", "{:.2f}"),
+    ("Collisions / episode", "collisions", "{:.2f}"),
+    ("Completed episodes", "complete_rate", "{:.0%}"),
+    ("Time to complete (s)", "time_to_complete_s", "{:.1f}"),
+    ("Safety intervention (s/ep)", "safety_s", "{:.1f}"),
+]
+
+
+def write_report(out_base: str, sections: dict[str, dict], meta: dict) -> tuple[str, str]:
+    """Persist an eval run as ``<out_base>.json`` + ``.md``.
+
+    The JSON is the machine record (diff runs across commits); the Markdown is
+    the human/PR-ready table. ``sections`` maps a policy label to its
+    :func:`aggregate` dict. Returns the two paths."""
+    import json
+    import time
+    from pathlib import Path
+
+    base = Path(out_base)
+    base.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "meta": {**meta, "git": _git_sha(), "when": time.strftime("%Y-%m-%d %H:%M:%S")},
+        "results": {k: {m: float(v) for m, v in a.items()} for k, a in sections.items()},
+    }
+    json_path = base.with_suffix(".json")
+    json_path.write_text(json.dumps(payload, indent=2))
+
+    lines = ["# GardenerBDX eval report", ""]
+    lines += [f"- **{k}**: {v}" for k, v in payload["meta"].items()]
+    lines += ["", "| Metric | " + " | ".join(sections) + " |",
+              "|---|" + "---|" * len(sections)]
+    for row_label, key, fmt in _MD_ROWS:
+        cells = [fmt.format(sections[s][key]) for s in sections]
+        lines.append(f"| {row_label} | " + " | ".join(cells) + " |")
+    md_path = base.with_suffix(".md")
+    md_path.write_text("\n".join(lines) + "\n")
+    return str(json_path), str(md_path)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--backend", default="kinematic")
@@ -141,23 +197,40 @@ def main() -> None:
     ap.add_argument("--episodes", type=int, default=10)
     ap.add_argument("--steps", type=int, default=3000)
     ap.add_argument("--compare", action="store_true", help="score scripted vs neural side by side")
+    ap.add_argument("--out", default="out/eval_report",
+                    help="report base path (writes <out>.json + <out>.md); '' disables")
     args = ap.parse_args()
 
     rc = RobotConfig.from_yaml()
     h = HierarchyConfig.from_yaml()
     dt = 1.0 / h.locomotion_hz
+    sections: dict[str, dict] = {}
 
     def eval_vla(kind: str, kwargs: dict, label: str):
         results = [run_episode(args.backend, kind, args.goal, args.steps, 100 + i, kwargs, dt, rc, h)
                    for i in range(args.episodes)]
-        _print(label, aggregate(results, dt))
+        sections[label] = aggregate(results, dt)
+        _print(label, sections[label])
 
     if args.compare:
-        eval_vla("scripted", {}, "ScriptedGardenerVLA (expert/teacher)")
-        eval_vla("neural", {"checkpoint": args.vla_ckpt, "device": h.device}, "NeuralVLA (learned)")
+        eval_vla("scripted", {}, "scripted (teacher)")
+        from pathlib import Path
+
+        if args.vla_ckpt and not Path(args.vla_ckpt).exists():
+            print(f"\n[eval] neural checkpoint not found: {args.vla_ckpt} — "
+                  "run train_vla first; comparing against an UNTRAINED net instead.")
+        eval_vla("neural", {"checkpoint": args.vla_ckpt if Path(args.vla_ckpt or "").exists() else "",
+                            "device": h.device}, "neural (learned)")
     else:
         kwargs = {} if args.vla == "scripted" else {"checkpoint": args.vla_ckpt, "device": h.device}
-        eval_vla(args.vla, kwargs, f"{args.vla} VLA")
+        eval_vla(args.vla, kwargs, f"{args.vla}")
+
+    if args.out:
+        jp, mp = write_report(args.out, sections, meta={
+            "backend": args.backend, "episodes": args.episodes, "steps": args.steps,
+            "goal": args.goal, "vla_ckpt": args.vla_ckpt or "(none)",
+        })
+        print(f"\n[eval] report -> {mp}  (+ {jp})")
 
 
 if __name__ == "__main__":

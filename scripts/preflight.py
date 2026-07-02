@@ -34,7 +34,15 @@ def main() -> int:
     print("=" * 64)
     core_ok = True
 
+    # --- interpreter: Isaac Sim pip wheels exist ONLY for Python 3.11 ------ #
+    py = sys.version_info
     print(f"\n[python] {sys.version.split()[0]}  ({sys.executable})")
+    if (py.major, py.minor) == (3, 11):
+        print(f"{OK} Python 3.11 — matches the Isaac Sim pip requirement")
+    else:
+        print(f"{WARN} Python {py.major}.{py.minor}: `pip install isaacsim` needs **3.11**. "
+              "The core stack runs here, but build the Isaac venv with 3.11 "
+              "(Windows: `py -3.11 -m venv ...`).")
 
     # --- core package ---------------------------------------------------- #
     try:
@@ -65,6 +73,15 @@ def main() -> int:
 
     # --- simulators ------------------------------------------------------ #
     print(f"{OK if has('mujoco') else WARN} mujoco {'present' if has('mujoco') else 'missing  (pip install -e .[sim])'}")
+    isaacsim_ok = has("isaacsim")
+    print(f"{OK if isaacsim_ok else WARN} Isaac Sim {'present (pip)' if isaacsim_ok else 'not found  (pip install \"isaacsim[all,extscache]\" --extra-index-url https://pypi.nvidia.com)'}")
+    if isaacsim_ok:
+        import os
+
+        if os.environ.get("OMNI_KIT_ACCEPT_EULA", "").upper() not in ("YES", "Y", "1"):
+            print("    note: first Isaac boot asks for the NVIDIA EULA. For scripted runs set:")
+            print("          $env:OMNI_KIT_ACCEPT_EULA='YES'   (PowerShell)  /  export OMNI_KIT_ACCEPT_EULA=YES")
+        print("    note: the very first boot compiles shaders — several minutes of apparent hang is normal.")
     isaac = has("isaaclab") or has("omni.isaac.lab")
     print(f"{OK if isaac else WARN} Isaac Lab {'present' if isaac else 'not found  (install on the GPU box; see docs/ISAACLAB.md)'}")
     print(f"{OK if has('gr00t') else WARN} Isaac-GR00T {'present' if has('gr00t') else 'not found  (optional; see docs/GROOT.md)'}")
@@ -115,17 +132,22 @@ def main() -> int:
     print("\n" + "=" * 64)
     print(" next steps")
     print("=" * 64)
+    print("  the canonical task runner (same commands for you and Claude):")
+    print("    python scripts/dev.py list")
     print("  see it move (kinematic, any machine):")
-    print("    python scripts/view_kinematic.py --gif out/gardener.gif")
-    print("  see it in physics (needs a display):")
-    print("    python scripts/view_mujoco.py --view")
-    if isaac:
-        print("  train the walk at scale:")
-        print("    python -m gardener_bdx.training.train_isaaclab --num_envs 4096 --headless")
+    print("    python scripts/dev.py gif")
+    if isaac or isaacsim_ok:
+        print("  robot -> USD, then validate the Isaac pipeline in ~2 min BEFORE the long run:")
+        print("    python scripts/dev.py usd")
+        print("    python scripts/dev.py walk-smoke")
+        print("  then the real training + see it:")
+        print("    python scripts/dev.py walk")
+        print("    python scripts/dev.py isaac")
     else:
-        print("  install Isaac Lab, then: ./scripts/setup_omniverse.sh")
-    print("  score task success:")
-    print("    python -m gardener_bdx.training.evaluate --compare")
+        setup = "scripts\\setup_omniverse.ps1" if sys.platform == "win32" else "./scripts/setup_omniverse.sh"
+        print(f"  install Isaac Sim + Isaac Lab (docs/GETTING_STARTED_GPU.md), then: {setup}")
+    print("  score task success (writes out/eval_report.md):")
+    print("    python scripts/dev.py eval")
     print("=" * 64)
     return 0 if core_ok else 1
 

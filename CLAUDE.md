@@ -58,15 +58,19 @@ interactive GUI + eval), `hardware/jetson_backend.py` (real robot, driver seams)
 ## Immediate next steps on the GPU (the plan)
 
 The runbook is `docs/GETTING_STARTED_GPU.md`; the interactive-Isaac guide is
-`docs/ISAACSIM.md`. In order:
+`docs/ISAACSIM.md`. **Drive everything through the task runner** —
+`python scripts/dev.py list` — so human and agent share one vocabulary. In order:
 
-1. `python scripts/preflight.py` — confirm CUDA/GPU, MuJoCo, Isaac, deps.
-2. `python scripts/convert_to_usd.py` — URDF → USD for Isaac.
-3. Train the walk: `python -m gardener_bdx.training.train_isaaclab --num_envs 4096 --headless`
-   → exports `models/policies/locomotion.npz`. Watch curves: `tensorboard --logdir logs/`.
-4. See it: `python scripts/run_isaac.py --policy models/policies/locomotion.npz`
-   (interactive GUI) or `python scripts/view_mujoco.py --view`.
-5. VLA brain: `collect_demos` → `train_vla` → `evaluate --compare`.
+1. `python scripts/dev.py preflight` — Python 3.11? CUDA? MuJoCo? Isaac? deps.
+2. `python scripts/dev.py usd` — URDF → USD for Isaac.
+3. `python scripts/dev.py walk-smoke` — **2-min pipeline check first**, then
+   `python scripts/dev.py walk` → exports `models/policies/locomotion.npz`.
+   Watch curves: `tensorboard --logdir logs/`.
+4. See it: `python scripts/dev.py isaac` (interactive GUI) or `dev.py watch`.
+5. VLA brain: `dev.py demos` → `dev.py vla` → `dev.py eval` (writes
+   `out/eval_report.{md,json}`, git-stamped — the regression gate). If BC
+   plateaus: `dev.py dagger` then retrain with
+   `--data data/expert_demos.npz,data/dagger_demos.npz`.
 6. Expect to debug Isaac version/namespace issues at step 2–4; fix in
    `sim/isaac_backend.py` / `training/isaaclab_locomotion_env.py`.
 

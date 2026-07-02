@@ -44,10 +44,46 @@ pip install -e '.[sim,vla,train,viz]'
 python scripts/preflight.py
 ```
 
-`preflight.py` prints a checklist (CUDA on?, which GPU, MuJoCo, Isaac, GR00T,
-optional libs), runs a 200-tick gardener smoke test, and builds the NeuralVLA on
-the GPU. Green ✓ = ready; yellow • = optional/missing with the install hint.
+`preflight.py` prints a checklist (Python 3.11?, CUDA on?, which GPU, MuJoCo,
+Isaac, GR00T, optional libs), runs a 200-tick gardener smoke test, and builds
+the NeuralVLA on the GPU. Green ✓ = ready; yellow • = optional/missing with the
+install hint.
 Official install reference: <https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/index.html>.
+
+> **First-run gotchas (esp. Windows)**
+> 1. **Python 3.11 exactly** — `pip install isaacsim` has wheels for 3.11 only
+>    (preflight now checks). Build the venv with `py -3.11 -m venv ...`.
+> 2. **EULA**: the first Isaac boot asks you to accept the NVIDIA EULA. For
+>    scripted/headless runs: `$env:OMNI_KIT_ACCEPT_EULA='YES'`.
+> 3. **The first boot "hangs"** — it's compiling RTX shaders; several minutes
+>    is normal. Subsequent boots are fast.
+> 4. **One venv = no wrapper needed**: because Isaac Sim/Lab are pip-installed
+>    into the same venv as this repo, plain `python -m gardener_bdx...` works —
+>    `isaaclab.bat -p` is only needed for source-checkout installs.
+> 5. **Validate cheap before training long**: `python scripts/dev.py walk-smoke`
+>    (64 envs / 20 iters, ~2-3 min) proves USD → env → PPO → export end-to-end
+>    before you commit to the 4096-env run.
+> 6. **If Isaac Lab RL fights your setup**, you're not blocked: the MuJoCo path
+>    (`python -m gardener_bdx.training.train_locomotion --backend mujoco`)
+>    trains a first walk on CPU/GPU without Isaac, exporting the same `.npz`.
+
+**The task runner.** Every step below has a canonical verb in
+`scripts/dev.py` (same on Windows/Linux; prints the underlying command it
+runs): `python scripts/dev.py list`. A Claude Code session in this repo uses
+the same verbs, so you and the agent share one vocabulary:
+
+```powershell
+python scripts\dev.py preflight     # readiness
+python scripts\dev.py gif           # see the task (no GPU)
+python scripts\dev.py usd           # robot -> USD
+python scripts\dev.py walk-smoke    # 2-min Isaac pipeline check
+python scripts\dev.py walk          # the real gait training
+python scripts\dev.py isaac         # interactive photoreal twin
+python scripts\dev.py demos         # expert demonstrations
+python scripts\dev.py vla           # train the brain
+python scripts\dev.py eval          # scoreboard -> out/eval_report.md
+python scripts\dev.py dagger        # DAgger round (fixes BC drift), then vla again
+```
 
 Then convert the robot to USD and smoke-train (one command):
 
@@ -118,8 +154,23 @@ python -m gardener_bdx.training.evaluate --compare   # success / collisions / ti
 
 `evaluate --compare` is your **regression gate**: it prints plants serviced,
 water delivered, collisions, completion time and safety interventions for the
-scripted expert vs. your trained VLA. The goal is for the learned policy to match
-then beat the teacher.
+scripted expert vs. your trained VLA — and writes `out/eval_report.{md,json}`
+(stamped with the git commit) so runs are comparable across iterations. The
+goal is for the learned policy to match then beat the teacher.
+
+**When BC plateaus, run DAgger.** Behavior cloning drifts off the expert's
+states (compounding small errors with no supervision on how to recover). One or
+two DAgger rounds fix it — the *learned* policy drives, the *expert* labels the
+states it actually visits:
+
+```bash
+python -m gardener_bdx.training.collect_demos --backend mujoco --render \
+    --driver neural --vla-ckpt models/policies/vla_bc.pt \
+    --episodes 100 --out data/dagger_demos.npz
+python -m gardener_bdx.training.train_vla \
+    --data data/expert_demos.npz,data/dagger_demos.npz --epochs 30 --device cuda
+python -m gardener_bdx.training.evaluate --compare   # success rate should jump
+```
 
 ---
 
@@ -262,10 +313,12 @@ Run a subset while iterating: `pytest tests/test_safety.py -q`.
 ### TL;DR first session
 
 ```bash
-python scripts/preflight.py
-python scripts/view_kinematic.py --gif out/gardener.gif         # see the task
-ISAACLAB_PATH=~/IsaacLab ./scripts/setup_omniverse.sh           # USD + smoke-train
-$ISAACLAB -p -m gardener_bdx.training.train_isaaclab --num_envs 4096 --headless
-python scripts/view_mujoco.py --view --policy models/policies/locomotion.npz
-python -m gardener_bdx.training.evaluate --compare
+python scripts/dev.py preflight     # ready?
+python scripts/dev.py gif           # see the task logic (no GPU needed)
+python scripts/dev.py usd           # robot -> USD
+python scripts/dev.py walk-smoke    # 2-min pipeline validation
+python scripts/dev.py walk          # train the gait (~15-40 min on a 4070)
+python scripts/dev.py watch         # watch it walk in MuJoCo
+python scripts/dev.py isaac         # the interactive photoreal twin
+python scripts/dev.py demos && python scripts/dev.py vla && python scripts/dev.py eval
 ```

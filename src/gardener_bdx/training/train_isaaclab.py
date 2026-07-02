@@ -20,6 +20,10 @@ def main() -> None:
     parser.add_argument("--max_iterations", type=int, default=1500)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", type=str, default="models/policies/locomotion.npz")
+    parser.add_argument("--smoke", action="store_true",
+                        help="pipeline check, not a training run: 64 envs / 20 iters "
+                             "(~2-3 min) to validate USD, env, PPO, and the .npz export "
+                             "BEFORE committing to the long run")
 
     # AppLauncher injects --headless, --device, etc., and must boot before any
     # omni/isaaclab import.
@@ -27,6 +31,12 @@ def main() -> None:
 
     AppLauncher.add_app_launcher_args(parser)
     args = parser.parse_args()
+    if args.smoke:
+        args.num_envs = min(args.num_envs, 64)
+        args.max_iterations = min(args.max_iterations, 20)
+        args.out = "models/policies/locomotion_smoke.npz"  # don't shadow a real policy
+        print("[smoke] 64 envs / 20 iters -> models/policies/locomotion_smoke.npz "
+              "(validates the pipeline; the gait will NOT walk yet)")
     app_launcher = AppLauncher(args)
     simulation_app = app_launcher.app
 
