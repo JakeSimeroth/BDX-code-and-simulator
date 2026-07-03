@@ -121,8 +121,8 @@ class GardenerBdxFlatEnvCfg(DirectRLEnvCfg):
                 joint_names_expr=[".*"],
                 stiffness=_per_joint(_RC.kp),
                 damping=_per_joint(_RC.kd),
-                effort_limit=_per_joint(_RC.joint_torque_limit),
-                velocity_limit=_per_joint(_RC.joint_velocity_limit),
+                effort_limit_sim=_per_joint(_RC.joint_torque_limit),
+                velocity_limit_sim=_per_joint(_RC.joint_velocity_limit),
             ),
         },
     )

@@ -18,6 +18,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 OK, WARN, BAD = "\033[92m✓\033[0m", "\033[93m•\033[0m", "\033[91m✗\033[0m"
 
 
@@ -74,7 +77,12 @@ def main() -> int:
     # --- simulators ------------------------------------------------------ #
     print(f"{OK if has('mujoco') else WARN} mujoco {'present' if has('mujoco') else 'missing  (pip install -e .[sim])'}")
     isaacsim_ok = has("isaacsim")
-    print(f"{OK if isaacsim_ok else WARN} Isaac Sim {'present (pip)' if isaacsim_ok else 'not found  (pip install \"isaacsim[all,extscache]\" --extra-index-url https://pypi.nvidia.com)'}")
+    isaacsim_msg = (
+        "present (pip)"
+        if isaacsim_ok
+        else 'not found  (pip install "isaacsim[all,extscache]" --extra-index-url https://pypi.nvidia.com)'
+    )
+    print(f"{OK if isaacsim_ok else WARN} Isaac Sim {isaacsim_msg}")
     if isaacsim_ok:
         import os
 

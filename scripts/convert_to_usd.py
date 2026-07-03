@@ -14,9 +14,12 @@ versions — the few used here are the stable core; tweak if your version differ
 from __future__ import annotations
 
 import argparse
+import sys
+import traceback
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "src"))
 
 
 def main() -> None:
@@ -40,37 +43,66 @@ def main() -> None:
     app_launcher = AppLauncher({"headless": True})
     simulation_app = app_launcher.app
 
-    from isaaclab.sim.converters import MjcfConverter, MjcfConverterCfg, UrdfConverter, UrdfConverterCfg
+    try:
+        from isaaclab.sim.converters import MjcfConverter, MjcfConverterCfg, UrdfConverter, UrdfConverterCfg
 
-    kind = args.type
-    if kind == "auto":
-        kind = "mjcf" if args.input.lower().endswith((".xml", ".mjcf")) else "urdf"
+        kind = args.type
+        if kind == "auto":
+            kind = "mjcf" if args.input.lower().endswith((".xml", ".mjcf")) else "urdf"
 
-    if kind == "urdf":
-        cfg = UrdfConverterCfg(
-            asset_path=args.input,
-            usd_dir=args.out_dir,
-            usd_file_name=args.usd_name,
-            fix_base=args.fix_base,
-            merge_fixed_joints=True,
-            force_usd_conversion=True,
-        )
-        converter = UrdfConverter(cfg)
-    else:
-        cfg = MjcfConverterCfg(
-            asset_path=args.input,
-            usd_dir=args.out_dir,
-            usd_file_name=args.usd_name,
-            fix_base=args.fix_base,
-            import_sites=True,
-            force_usd_conversion=True,
-        )
-        converter = MjcfConverter(cfg)
+        if kind == "urdf":
+            cfg = UrdfConverterCfg(
+                asset_path=args.input,
+                usd_dir=args.out_dir,
+                usd_file_name=args.usd_name,
+                fix_base=args.fix_base,
+                merge_fixed_joints=True,
+                force_usd_conversion=True,
+                joint_drive=_joint_drive_cfg(UrdfConverterCfg),
+            )
+            converter = UrdfConverter(cfg)
+        else:
+            cfg = MjcfConverterCfg(
+                asset_path=args.input,
+                usd_dir=args.out_dir,
+                usd_file_name=args.usd_name,
+                fix_base=args.fix_base,
+                import_sites=True,
+                force_usd_conversion=True,
+            )
+            converter = MjcfConverter(cfg)
 
-    print(f"[convert_to_usd] {kind.upper()} -> {converter.usd_path}")
-    print("Next: point sim/isaac_backend.py and training/isaaclab_locomotion_env.py at this USD,")
-    print("then `python -m gardener_bdx.training.train_isaaclab --num_envs 4096 --headless`.")
+        print(f"[convert_to_usd] {kind.upper()} -> {converter.usd_path}")
+        print("Next: point sim/isaac_backend.py and training/isaaclab_locomotion_env.py at this USD,")
+        print("then `python -m gardener_bdx.training.train_isaaclab --num_envs 4096 --headless`.")
+    except BaseException:
+        # Kit's shutdown hooks can swallow the process exit code, turning a
+        # traceback into a "successful" run — report failure explicitly.
+        traceback.print_exc()
+        simulation_app.close()
+        import os
+
+        os._exit(1)
     simulation_app.close()
+
+
+def _joint_drive_cfg(UrdfConverterCfg):
+    """PD drive gains for the USD, from the canonical robot yaml.
+
+    Recent Isaac Lab makes ``joint_drive.gains.stiffness`` required; the training
+    env re-applies these same values through ``ImplicitActuatorCfg`` at spawn, so
+    the USD and the env can't drift apart.
+    """
+    from gardener_bdx.common.config import RobotConfig
+
+    rc = RobotConfig.from_yaml()
+    exact = lambda names, values: {rf"^{n}$": float(v) for n, v in zip(names, values)}
+    return UrdfConverterCfg.JointDriveCfg(
+        gains=UrdfConverterCfg.JointDriveCfg.PDGainsCfg(
+            stiffness=exact(rc.joint_names, rc.kp),
+            damping=exact(rc.joint_names, rc.kd),
+        )
+    )
 
 
 if __name__ == "__main__":

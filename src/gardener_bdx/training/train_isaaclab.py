@@ -41,48 +41,73 @@ def main() -> None:
     simulation_app = app_launcher.app
 
     # ---- imports valid only after the app exists --------------------------
-    import torch
+    import importlib.metadata as metadata
+    import os
+    import traceback
+
     from rsl_rl.runners import OnPolicyRunner
 
     from isaaclab_rl.rsl_rl import (
+        RslRlMLPModelCfg,
         RslRlOnPolicyRunnerCfg,
-        RslRlPpoActorCriticCfg,
         RslRlPpoAlgorithmCfg,
         RslRlVecEnvWrapper,
+        handle_deprecated_rsl_rl_cfg,
     )
 
     from .isaaclab_locomotion_env import GardenerBdxFlatEnvCfg, GardenerBdxLocomotionEnv
 
-    env_cfg = GardenerBdxFlatEnvCfg()
-    env_cfg.scene.num_envs = args.num_envs
-    env_cfg.sim.device = args.device
+    try:
+        env_cfg = GardenerBdxFlatEnvCfg()
+        env_cfg.scene.num_envs = args.num_envs
+        env_cfg.seed = args.seed
+        env_cfg.sim.device = args.device
 
-    agent_cfg = RslRlOnPolicyRunnerCfg(
-        num_steps_per_env=24,
-        max_iterations=args.max_iterations,
-        save_interval=100,
-        experiment_name="gardener_bdx_locomotion",
-        empirical_normalization=False,  # keep export simple: no obs normalizer to fold in
-        policy=RslRlPpoActorCriticCfg(
-            init_noise_std=1.0,
-            actor_hidden_dims=[256, 128],
-            critic_hidden_dims=[256, 128],
-            activation="elu",
-        ),
-        algorithm=RslRlPpoAlgorithmCfg(
-            value_loss_coef=1.0, use_clipped_value_loss=True, clip_param=0.2,
-            entropy_coef=0.005, num_learning_epochs=5, num_mini_batches=4,
-            learning_rate=1e-3, schedule="adaptive", gamma=0.99, lam=0.95,
-            desired_kl=0.01, max_grad_norm=1.0,
-        ),
-    )
+        # rsl-rl >= 4 schema: explicit actor/critic model cfgs + obs_groups
+        # (the single `policy` ActorCritic cfg is deprecated).
+        agent_cfg = RslRlOnPolicyRunnerCfg(
+            seed=args.seed,
+            device=args.device,
+            num_steps_per_env=24,
+            max_iterations=args.max_iterations,
+            save_interval=100,
+            experiment_name="gardener_bdx_locomotion",
+            obs_groups={"actor": ["policy"], "critic": ["policy"]},
+            actor=RslRlMLPModelCfg(
+                hidden_dims=[256, 128],
+                activation="elu",
+                obs_normalization=False,  # keep export simple: no obs normalizer to fold in
+                distribution_cfg=RslRlMLPModelCfg.GaussianDistributionCfg(init_std=1.0),
+            ),
+            critic=RslRlMLPModelCfg(
+                hidden_dims=[256, 128],
+                activation="elu",
+                obs_normalization=False,
+            ),
+            algorithm=RslRlPpoAlgorithmCfg(
+                value_loss_coef=1.0, use_clipped_value_loss=True, clip_param=0.2,
+                entropy_coef=0.005, num_learning_epochs=5, num_mini_batches=4,
+                learning_rate=1e-3, schedule="adaptive", gamma=0.99, lam=0.95,
+                desired_kl=0.01, max_grad_norm=1.0,
+            ),
+        )
 
-    env = GardenerBdxLocomotionEnv(env_cfg)
-    env = RslRlVecEnvWrapper(env)
-    runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir="logs/gardener_bdx", device=args.device)
-    runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
+        # Strip deprecated cfg fields (MISSING sentinels would otherwise leak
+        # into the model constructors as unexpected kwargs).
+        agent_cfg = handle_deprecated_rsl_rl_cfg(agent_cfg, metadata.version("rsl-rl-lib"))
 
-    export_actor_to_npz(runner, args.out)
+        env = GardenerBdxLocomotionEnv(env_cfg)
+        env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
+        runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir="logs/gardener_bdx", device=args.device)
+        runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
+
+        export_actor_to_npz(runner, args.out)
+    except BaseException:
+        # Kit's shutdown hooks can swallow the process exit code, turning a
+        # traceback into a "successful" run — report failure explicitly.
+        traceback.print_exc()
+        simulation_app.close()
+        os._exit(1)
     simulation_app.close()
 
 
@@ -92,7 +117,9 @@ def export_actor_to_npz(runner, path: str) -> None:
 
     from ..policy.locomotion import MLP
 
-    actor = runner.alg.actor_critic.actor
+    alg = runner.alg
+    # rsl-rl >= 4: PPO holds `actor` directly; older versions used `actor_critic.actor`.
+    actor = alg.actor if hasattr(alg, "actor") else alg.actor_critic.actor
     layers = [(m.weight.detach().cpu().numpy(), m.bias.detach().cpu().numpy())
               for m in actor.modules() if isinstance(m, torch.nn.Linear)]
     MLP.save_npz(path, layers, activation="elu")

@@ -17,6 +17,9 @@ models/policies/*.npz
 models/policies/*.pt
 # large Isaac USD assets (author locally)
 models/**/*.usd
+# UrdfConverter cache stamps written beside the USD
+models/robot/config.yaml
+models/robot/.asset_hash
 # generated visualizations / logs
 out/
 *.mp4
