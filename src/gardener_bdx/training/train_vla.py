@@ -128,7 +128,9 @@ def main() -> None:
 
     def make_img_seq(rgb_seq, depth_seq):  # (B,T,3,h,w)+(B,T,1,h,w) -> (B,T,4,96,96)
         b, t = rgb_seq.shape[:2]
-        x = torch.cat([rgb_seq.flatten(0, 1), depth_seq.flatten(0, 1)], dim=1)
+        # Move the small raw frames to the device BEFORE the upscale: the
+        # interpolate then runs on GPU instead of pinning a CPU core.
+        x = torch.cat([rgb_seq.flatten(0, 1), depth_seq.flatten(0, 1)], dim=1).to(dev)
         x = F.interpolate(x, size=(RGB_HW, RGB_HW), mode="bilinear", align_corners=False)
         return x.view(b, t, 4, RGB_HW, RGB_HW)
 
@@ -140,7 +142,7 @@ def main() -> None:
 
     def batch_loss(idx):
         wb = win[idx]                                       # (B,T)
-        img = make_img_seq(images[wb], depth[wb]).to(dev)   # (B,T,4,96,96)
+        img = make_img_seq(images[wb], depth[wb])           # (B,T,4,96,96) on dev
         bev = (bev_all[wb].to(dev) if bev_all is not None
                else torch.zeros(len(idx), T, 1, 64, 64, device=dev))
         pr = proprio[wb].to(dev)                            # (B,T,P)
@@ -169,8 +171,14 @@ def main() -> None:
         sched.step()
         net.eval()
         with torch.no_grad():
-            val = batch_loss(val_idx).item()
-        print(f"epoch {epoch+1}/{args.epochs}  train_loss={tot / len(perm):.4f}  val_loss={val:.4f}")
+            # Chunked: the holdout is ~N/10 samples — one mega-batch of image
+            # windows would be tens of GB.
+            v_tot = 0.0
+            for s in range(0, len(val_idx), args.batch):
+                vidx = val_idx[s : s + args.batch]
+                v_tot += batch_loss(vidx).item() * len(vidx)
+            val = v_tot / len(val_idx)
+        print(f"epoch {epoch+1}/{args.epochs}  train_loss={tot / len(perm):.4f}  val_loss={val:.4f}", flush=True)
 
     torch.save({"model": net.state_dict()}, args.out)
     print(f"saved VLA checkpoint -> {args.out}")
