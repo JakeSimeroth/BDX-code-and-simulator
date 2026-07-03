@@ -17,6 +17,7 @@ in sim, policy is hardened by RL, then ported — is the whole point."""
 from __future__ import annotations
 
 import argparse
+import os
 
 import numpy as np
 
@@ -186,6 +187,11 @@ def main() -> None:
             best_val = val
             best_state = {k: v.detach().cpu().clone() for k, v in net.state_dict().items()}
             star = "  *best"
+            # Persist immediately (atomic replace): the process can be killed at
+            # any time, and an end-of-run-only save loses the whole session.
+            tmp = args.out + ".tmp"
+            torch.save({"model": best_state}, tmp)
+            os.replace(tmp, args.out)
         print(f"epoch {epoch+1}/{args.epochs}  train_loss={tot / len(perm):.4f}  val_loss={val:.4f}{star}", flush=True)
 
     torch.save({"model": best_state if best_state is not None else net.state_dict()}, args.out)
