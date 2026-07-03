@@ -156,6 +156,7 @@ def main() -> None:
                 + args.skill_weight * F.cross_entropy(skill_logits, sk)
                 + args.expr_weight * F.cross_entropy(net.expression_logits(latent), ex))
 
+    best_val, best_state = float("inf"), None
     for epoch in range(args.epochs):
         net.train()
         perm = train_idx[torch.randperm(len(train_idx))]
@@ -178,10 +179,17 @@ def main() -> None:
                 vidx = val_idx[s : s + args.batch]
                 v_tot += batch_loss(vidx).item() * len(vidx)
             val = v_tot / len(val_idx)
-        print(f"epoch {epoch+1}/{args.epochs}  train_loss={tot / len(perm):.4f}  val_loss={val:.4f}", flush=True)
+        # BC overfits within a few epochs on this data — keep the best-val
+        # weights rather than whatever epoch 30 happens to be.
+        star = ""
+        if val < best_val:
+            best_val = val
+            best_state = {k: v.detach().cpu().clone() for k, v in net.state_dict().items()}
+            star = "  *best"
+        print(f"epoch {epoch+1}/{args.epochs}  train_loss={tot / len(perm):.4f}  val_loss={val:.4f}{star}", flush=True)
 
-    torch.save({"model": net.state_dict()}, args.out)
-    print(f"saved VLA checkpoint -> {args.out}")
+    torch.save({"model": best_state if best_state is not None else net.state_dict()}, args.out)
+    print(f"saved VLA checkpoint (best val_loss={best_val:.4f}) -> {args.out}")
 
 
 if __name__ == "__main__":
