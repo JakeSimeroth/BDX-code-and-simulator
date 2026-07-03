@@ -43,6 +43,7 @@ def main() -> None:
     # ---- imports valid only after the app exists --------------------------
     import importlib.metadata as metadata
     import os
+    import sys
     import traceback
 
     from rsl_rl.runners import OnPolicyRunner
@@ -103,12 +104,18 @@ def main() -> None:
 
         export_actor_to_npz(runner, args.out)
     except BaseException:
-        # Kit's shutdown hooks can swallow the process exit code, turning a
-        # traceback into a "successful" run — report failure explicitly.
+        # Report failure explicitly: Kit's shutdown hooks can swallow the exit
+        # code, and simulation_app.close() itself hangs after a full env+PPO
+        # session on Windows — never wait on it.
         traceback.print_exc()
-        simulation_app.close()
+        sys.stdout.flush()
+        sys.stderr.flush()
         os._exit(1)
-    simulation_app.close()
+    # Same hang on the success path: artifacts are already on disk, so skip
+    # Kit teardown and force a clean exit.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
 
 
 def export_actor_to_npz(runner, path: str) -> None:
